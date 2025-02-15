@@ -1,0 +1,18 @@
+services:
+  zerotier-server:
+    image: define-your-zerotier:latest
+    container_name: zerotier-server
+    restart: unless-stopped
+    ports:
+      - "9993:9993/tcp"
+      - "9993:9993/udp"
+      - "${API_PORT}:3443"
+      - "${FILE_SERVER_PORT}:3000"
+    environment:
+      - IP_ADDR4=${IP_ADDR4}
+      - IP_ADDR6=${IP_ADDR6}
+    volumes:
+      - "${DATA_PATH}/dist:/app/dist"
+      - "${DATA_PATH}/ztncui:/app/ztncui"
+      - "${DATA_PATH}/one:/var/lib/zerotier-one"
+      - "${DATA_PATH}/config:/app/config"
