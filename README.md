@@ -1,15 +1,15 @@
 ## 概述
 
-该库的作用主要是用以构建和部署自己的ZeroTier服务器。在默认情况下的应用中
+该库的作用主要是用以构建和部署自己的ZeroTier服务器。在缺省情况下：
 
-1. 我们只能根据官方DOC去配置Moon服务器，但是因为Moon服务器的握手还是依赖于官方的Planet服务器。但官方的Planet服务器部署在国外，很多时候都会出现访问失败的情况
-2. 在某些设备上，我们无法连接Moon服务器
-3. 自行部署Planet服务器在国内是很好的解决方案
+1. 没有自主性，需要通过ZeroTier官网进行管理
+2. 在Mac设备上，无法连接Moon服务器
+3. Moon 设备的握手需要通过planet进行，默认的planet服务器都在国外
 
 ## 使用
 
 ```shell
-git clone 
+git clone https://github.com/Xiwin/define-your-zerotier.git
 
 cd define-your-zerotier
 chmod +x ./deploy.sh
@@ -18,12 +18,11 @@ sudo deploy.sh
 
 `deploy.sh` 部署脚本，自带6个功能：
 
-1. 构建: 构建本地镜像并导出
+1. 构建: 构建镜像会导出一份本地镜像
 2. 运行: 拉取远程镜像并运行
-3. 更新: 通过Compose拉取最新镜像并更新
-4. 配置: 设置运行配置
-5. 打印信息: file下载路径、planet key 和 moon 名称
-6. 重置密码: 重置Ztncui管理面板账号密码
+3. 配置: 设置运行配置
+4. 打印信息: file下载路径、planet key 和 moon 名称
+5. 重置密码: 重置Ztncui管理面板账号密码
 
 > 注意1：主机映射9993/tcp 和 9993/udp 端口不可更改。若出现，9993端口冲突，请优先考虑ZeroTier，若Planet的端口不为9993，Client将无法连接。
 

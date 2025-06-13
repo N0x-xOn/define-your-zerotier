@@ -12,6 +12,6 @@ Build() {
     fi
 
     # ZeroTier 最新版标签 
-    docker buildx build --platform linux/amd64 -t "$1:latest" .
-    docker buildx build --platform linux/amd64 -t "$1:${image_release}" .
+    docker buildx build --platform linux/amd64 -t "${image_name}:latest" .
+    docker buildx build --platform linux/amd64 -t "${image_name}:${image_release}" .
 }

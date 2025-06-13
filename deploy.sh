@@ -1,8 +1,8 @@
 #!/bin/bash
 
-source "./build/build.sh"
+source build/build.sh
 
-# Build Feature Var
+# 构建所需变量
 IMAGE_NAME="define-your-zerotier"
 IMAGE_RP_USER="xoneki"
 ZTN_RP="ZeroTierOne"
@@ -11,18 +11,48 @@ RELEASES=""
 
 # IP_ADDR*
 PUBLIC_IPv4_CHECK_URL="https://ipv4.icanhazip.com/"
-PUBLIC_IPv6_CHECK_URL="https://ipv6.icanhazip.com/"
+# PUBLIC_IPv6_CHECK_URL="https://ipv6.icanhazip.com/"
 
+# .env 配置文件内容
 IP_ADDR4=""
-IP_ADDR6=""
+# IP_ADDR6=""
+API_PORT="3443"
+ZT_PORT="9993" # ZeroTier默认端口,不要修改
+FILE_SERVER_PORT="3000"
+DATA_PATH="/data/zerotier"
+
+# Global Var
 KEY=""
 MOON_NAME=""
-ZTNCUI_PORT="3443"
-FILE_SERVER_PORT="3000"
+CONTAINER_SERVICE_NAME="zerotier-server" # Adjust if your docker-compose service name is different
+
+# Colors
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
 # ------------
 # Utils Functions
 # ------------
+
+info_msg() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+success_msg() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+error_msg() {
+    echo -e "${RED}[ERROR]${NC} $1"
+    exit 1
+}
+
+warn_msg() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
 
 # 通过ZeroTier提供的版本信息配置构建版本tag
 _getReleaseVersion() {
@@ -45,7 +75,7 @@ _getReleaseVersion() {
         tail -n 1 | \
         sed -n 's/.*href="\([0-9]\+\.[0-9]\+\.[0-9]\+\)\/".*/\1/p')
     
-    if [ -z ${zerotier_release} ]; then
+    if [ -z "${zerotier_release}" ]; then
         return 1
     else
         RELEASES=${zerotier_release}
@@ -55,7 +85,7 @@ _getReleaseVersion() {
 
 _init_env_file() {
     sed -e "s#__IP_ADDR4__#${IP_ADDR4}#" \
-    -e "s#__IP_ADDR6__#${IP_ADDR6}#" \
+    # -e "s#__IP_ADDR6__#${IP_ADDR6}#" \
     -e "s#__API_PORT__#${API_PORT}#" \
     -e "s#__FILE_SERVER_PORT__#${FILE_SERVER_PORT}#" \
     -e "s#__DATA_PATH__#${DATA_PATH}#" \
@@ -63,40 +93,98 @@ _init_env_file() {
 }
 
 _get_ip() {
-    IP_ADDR4=$(curl -s ${PUBLIC_IPv4_CHECK_URL})
-    IP_ADDR6=$(curl -s ${PUBLIC_IPv6_CHECK_URL})
+    info_msg "正在获取公网 IPv4 地址从 ${PUBLIC_IPv4_CHECK_URL}..."
+    IP_ADDR4=$(curl -s --connect-timeout 5 ${PUBLIC_IPv4_CHECK_URL})
+    if [ -z "${IP_ADDR4}" ]; then
+        warn_msg "从 ${PUBLIC_IPv4_CHECK_URL} 获取 IPv4 地址失败。"
+        info_msg "尝试备用服务: https://api.ipify.org"
+        IP_ADDR4=$(curl -s --connect-timeout 5 https://api.ipify.org)
+        if [ -z "${IP_ADDR4}" ]; then
+            error_msg "获取公网 IPv4 地址失败。请检查网络连接或稍后手动输入IP地址。"
+            return 1
+        fi
+    fi
+    # Simple validation for IP format
+    if ! [[ "${IP_ADDR4}" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        error_msg "获取到的 IPv4 地址 '${IP_ADDR4}' 格式无效。请检查网络或手动输入。"
+        return 1
+    fi
+    success_msg "获取到的公网 IPv4 地址: ${IP_ADDR4}"
 }
 
 
 # Check docker image
 # $1 check target image name 
 # $2 image tag
-check_image() {
-    local image_name=$([ -n "$1" ] && echo "$1" || return 1)
-    local image_tag=$([ -n "$2" ] && echo "$2" || return 1)
+_check_image() {
+    local image_name=$1
+    local image_tag=$2
 
-    docker images --format '{{json .Repository}}:{{json .Tag}}' | grep '"{$image_name}":"${image_tag}"' 2>&1 > /dev/null || return 1
+    if [ -z "${image_name}" ] || [ -z "${image_tag}" ]; then
+        error_msg "内部错误: _check_image 调用时镜像名称或标签为空。" # Should not happen
+        return 1
+    fi
 
-    return 0
+    info_msg "检查本地是否存在 Docker 镜像 ${image_name}:${image_tag}..."
+    if docker image inspect "${image_name}:${image_tag}" &> /dev/null; then
+        success_msg "本地已存在镜像 ${image_name}:${image_tag}。"
+        return 0 # True, image exists
+    else
+        info_msg "本地未找到镜像 ${image_name}:${image_tag}。"
+        return 1 # False, image does not exist
+    fi
 }
 
 # $1 des port
-check_port() {
+_check_port() {
     local port=$1
-    if ss -tnlp | grep $port 2>&1 > /dev/null; then echo "端口${port}已被占用"; exit 1;fi
+    # Check if any process is listening on that port number (TCP or UDP)
+    # Use sudo if not root, as ss might require it for -p option
+    local ss_cmd="ss -tulnp"
+    if [[ $EUID -ne 0 ]]; then
+        ss_cmd="sudo ${ss_cmd}"
+    fi
+
+    if ${ss_cmd} | grep -qw ":${port}" ; then
+         error_msg "端口 ${port} 已被占用。请检查 '${ss_cmd} | grep -w :${port}' 确定占用进程，并释放该端口或在配置中使用其他端口。"
+    fi
 }
 
 print_url() {
-    echo "请访问 http://${IP_ADDR4}:${API_PORT} 进行配置"
-    echo "默认用户名：admin"
-    echo "默认密码：password"
-    echo "请及时修改密码"
-    echo "---------------------------"
-    echo "moon配置和planet配置在 ${DATA_PATH} 目录下"
-    echo "moons 文件下载： http://${IP_ADDR4}:${FILE_SERVER_PORT}/${MOON_NAME}?key=${KEY} "
-    echo "planet文件下载： http://${IP_ADDR4}:${FILE_SERVER_PORT}/planet?key=${KEY} "
-    echo "---------------------------"
-    echo "请放行以下端口：${ZT_PORT}/tcp,${ZT_PORT}/udp，${API_PORT}/tcp，${FILE_SERVER_PORT}/tcp"
+    echo -e "\n${BLUE}===============================================================${NC}"
+    echo -e "${BLUE}                    部署完成 - 访问信息                    ${NC}"
+    echo -e "${BLUE}===============================================================${NC}\n"
+    if [ -n "${IP_ADDR4}" ] && [ -n "${API_PORT}" ]; then
+        echo -e "${GREEN}请访问 Web UI进行配置: ${YELLOW}http://${IP_ADDR4}:${API_PORT}${NC}"
+        echo -e "默认用户名：${YELLOW}admin${NC}"
+        echo -e "默认密码：${YELLOW}password${NC}"
+        warn_msg "请及时修改密码！"
+    else
+        warn_msg "IP 地址或 API 端口未完全配置，无法生成 Web UI 链接。"
+    fi
+
+    echo -e "\n${BLUE}--- 文件下载信息 ---${NC}"
+    if [ -n "${DATA_PATH}" ]; then
+         echo -e "Moon配置文件和Planet配置文件位于宿主机路径: ${YELLOW}${DATA_PATH}/dist${NC}"
+    fi
+    if [ -n "${IP_ADDR4}" ] && [ -n "${FILE_SERVER_PORT}" ] && [ -n "${KEY}" ]; then
+        if [ -n "${MOON_NAME}" ]; then
+            echo -e "Moon (${MOON_NAME}) 文件下载链接: ${YELLOW}http://${IP_ADDR4}:${FILE_SERVER_PORT}/${MOON_NAME}?key=${KEY}${NC}"
+        else
+            warn_msg "Moon Name 未找到，Moon 下载链接不完整。"
+        fi
+        echo -e "Planet 文件下载链接: ${YELLOW}http://${IP_ADDR4}:${FILE_SERVER_PORT}/planet?key=${KEY}${NC}"
+    else
+        warn_msg "部分文件下载链接信息不完整 (IP, File Port, or Key 未设置/找到)。"
+    fi
+
+    echo -e "\n${BLUE}--- 防火墙提醒 ---${NC}"
+    warn_msg "请确保防火墙已放行以下端口："
+    echo -e "  - ${YELLOW}${ZT_PORT}/tcp${NC} (ZeroTier)"
+    echo -e "  - ${YELLOW}${ZT_PORT}/udp${NC} (ZeroTier)"
+    echo -e "  - ${YELLOW}${API_PORT}/tcp${NC} (Web UI)"
+    echo -e "  - ${YELLOW}${FILE_SERVER_PORT}/tcp${NC} (文件服务)"
+    echo -e "\n${BLUE}===============================================================${NC}\n"
 }
 
 
@@ -104,131 +192,356 @@ print_url() {
 # Pkg Functions
 # ------------
 
-extract_config() {
+_extract_config() {
     _extract() {
         local config_name=$1
-        cat ${DATA_PATH}/${config_name} | tr -d '\r'
+        # Ensure DATA_PATH is set and directory exists
+        if [ -z "${DATA_PATH}" ] || [ ! -d "${DATA_PATH}/config" ]; then
+            # warn_msg "在 _extract 中: DATA_PATH 未设置或 ${DATA_PATH}/config 不存在。"
+            return
+        fi
+        if [ ! -f "${DATA_PATH}/config/${config_name}" ]; then
+            # warn_msg "在 _extract 中: 配置文件 ${DATA_PATH}/config/${config_name} 未找到。"
+            return
+        fi
+        cat "${DATA_PATH}/config/${config_name}" | tr -d '\r'
     }
-    IP_ADDR4=$(_extract "ip_addr4")
-    IP_ADDR6=$(_extract "ip_addr6")
+    # Only update IP_ADDR4 if it's not already set (e.g. by user input or initial _get_ip)
+    # This allows user-set IP to persist over what might be in the config file (which could be an internal IP)
+    local temp_ip4
+    temp_ip4=$(_extract "ip_addr4")
+    if [ -z "${IP_ADDR4}" ] && [ -n "${temp_ip4}" ]; then
+        IP_ADDR4=${temp_ip4}
+    fi
+    # IP_ADDR6=$(_extract "ip_addr6") # Currently commented out
     KEY=$(_extract "file_server.key")
-    MOON_NAME=$(ls ${DATA_PATH}/dist | grep moon | tr -d '\r')
-}
 
-extract_env() {
-    local key_file="${PWD}/.env"
-    if [ -f "${key_file}" ]; then
-        IP_ADDR4=$(cat ${key_file} | grep "${IP_ADDR4}" | awk -F= '{print $2}')
-        IP_ADDR4=$(cat ${key_file} | grep "${IP_ADDR4}" | awk -F= '{print $2}')
-        API_PORT=$(cat ${key_file} | grep "${API_PORT}" | awk -F= '{print $2}')
-        FILE_SERVER_PORT=$(cat ${key_file} | grep "${FILE_SERVER_PORT}" | awk -F= '{print $2}')
-        DATA_PATH=$(cat ${key_file} | grep "${DATA_PATH}" | awk -F= '{print $2}')
+    # Ensure DATA_PATH is set and directory exists for ls
+    if [ -n "${DATA_PATH}" ] && [ -d "${DATA_PATH}/dist" ]; then
+        MOON_NAME=$(ls "${DATA_PATH}/dist" 2>/dev/null | grep moon | tr -d '\r' | head -n 1)
     else
-        echo ".env 环境配置文件不存在，请先run"
-        exit 1
+        # warn_msg "在 _extract_config 中: DATA_PATH 未设置或 ${DATA_PATH}/dist 不存在，无法获取 MOON_NAME。"
+        MOON_NAME=""
     fi
 }
 
+# 读取.env文件中的配置
+_extract_env() {
+    local key_file="${PWD}/.env"
+    if [ -f "${key_file}" ]; then
+        # Source the .env file to load all variables, safer than individual greps if format is consistent
+        # Or use more robust parsing:
+        local temp_ip4 api_p f_server_p data_p
+        temp_ip4=$(grep -E "^IP_ADDR4=" "${key_file}" | cut -d= -f2-)
+        # IP_ADDR6=$(grep -E "^IP_ADDR6=" "${key_file}" | cut -d= -f2-)
+        api_p=$(grep -E "^API_PORT=" "${key_file}" | cut -d= -f2-)
+        f_server_p=$(grep -E "^FILE_SERVER_PORT=" "${key_file}" | cut -d= -f2-)
+        data_p=$(grep -E "^DATA_PATH=" "${key_file}" | cut -d= -f2-)
+
+        # Update global variables if values were found in .env
+        [ -n "$temp_ip4" ] && IP_ADDR4="$temp_ip4"
+        [ -n "$api_p" ] && API_PORT="$api_p"
+        [ -n "$f_server_p" ] && FILE_SERVER_PORT="$f_server_p"
+        [ -n "$data_p" ] && DATA_PATH="$data_p"
+
+        # Validate that essential variables were loaded
+        if [ -z "${API_PORT}" ] || [ -z "${FILE_SERVER_PORT}" ] || [ -z "${DATA_PATH}" ]; then
+             warn_msg ".env 文件部分配置项未能正确加载。请检查文件格式。"
+        fi
+    else
+        error_msg ".env 环境配置文件不存在，请先执行 'run' 命令生成。"
+    fi
+}
 
 # ------------
 # Feature Functions
 # ------------
 
 build() {
-    # 检查image是否存在
-    check_image ${IMAGE_NAME} "latest"
-    if [ "$?" -eq 0 ]; then
-        echo "镜像已存在，尝试删除"
-        docker image rm "${IMAGE_NAME}:latest"
-        if [ $? -ne 0 ];then
-            echo "镜像已被容器使用并运行，无法构建"
-            exit 0
+    info_msg "开始构建 Docker 镜像: ${IMAGE_NAME}"
+
+    info_msg "获取最新的 ZeroTier 版本号..."
+    if ! _getReleaseVersion; then
+        error_msg "获取 ZeroTier 版本失败，请检查网络连接或 https://download.zerotier.com/RELEASES/ 状态。"
+        return 1
+    fi
+    success_msg "获取到 ZeroTier 最新版本: ${RELEASES}"
+
+    local image_to_check_latest="${IMAGE_NAME}:latest"
+    local image_to_check_release="${IMAGE_NAME}:${RELEASES}"
+    local image_in_use=false
+
+    if docker ps -a --filter "ancestor=${image_to_check_latest}" --format "{{.ID}}" | read -r || \
+       docker ps -a --filter "ancestor=${image_to_check_release}" --format "{{.ID}}" | read -r ; then
+        if docker ps -a --filter "ancestor=${image_to_check_latest}" --format "{{.ID}}" | grep -q . || \
+           docker ps -a --filter "ancestor=${image_to_check_release}" --format "{{.ID}}" | grep -q . ; then
+            image_in_use=true
         fi
     fi
 
-    cd "./build"
 
-    Build ${IMAGE_NAME} ${RELEASES}
+    if ${image_in_use}; then
+        error_msg "镜像 ${IMAGE_NAME} (latest or ${RELEASES}) 正被一个或多个容器使用。请先停止并移除相关容器 (e.g., 'docker compose down') 才能重建镜像。"
+        return 1
+    else
+        info_msg "检查并尝试移除旧的本地镜像 (${image_to_check_latest}, ${image_to_check_release})..."
+        docker image rm "${image_to_check_latest}" 2>/dev/null || true
+        docker image rm "${image_to_check_release}" 2>/dev/null || true
+        success_msg "旧的本地镜像已尝试移除 (如果存在且未使用)。"
+    fi
 
-    docker image save ${IMAGE_NAME}:latest > img/${IMAGE_NAME}:latest.dimg
-    docker image save ${IMAGE_NAME}:${RELEASES} > img/${IMAGE_NAME}:${RELEASES}.dimg
+
+    if [ ! -d "build/" ] || [ ! -f "build/build.sh" ] || [ ! -f "build/Dockerfile" ]; then
+        error_msg "构建所需文件 (build/build.sh, build/Dockerfile) 未找到。无法继续构建。"
+        return 1
+    fi
+    
+    cd build/
+    info_msg "进入 'build/' 目录，开始执行实际构建过程 (Build ${IMAGE_NAME} ${RELEASES})..."
+
+    if [ ! -x "./build.sh" ]; then
+        warn_msg "./build.sh 不可执行，尝试添加执行权限..."
+        chmod +x ./build.sh
+        if [ ! -x "./build.sh" ]; then
+            error_msg "./build.sh 仍然不可执行。请检查文件权限。"
+            cd ..
+            return 1
+        fi
+    fi
+
+
+    if ! ./build.sh "${IMAGE_NAME}" "${RELEASES}"; then 
+        error_msg "Docker 镜像构建失败。请检查 './build.sh' 脚本的输出。"
+        cd ..
+        return 1
+    fi
+    success_msg "Docker 镜像 ${IMAGE_NAME}:${RELEASES} 和 ${IMAGE_NAME}:latest 构建成功。"
+    
+    info_msg "正在保存镜像到 .dimg 文件..."
+    mkdir -p img/
+    local save_latest_path="img/${IMAGE_NAME}_latest.dimg"
+    local save_release_path="img/${IMAGE_NAME}_${RELEASES}.dimg"
+
+    if docker image save "${IMAGE_NAME}:latest" -o "${save_latest_path}" && \
+       docker image save "${IMAGE_NAME}:${RELEASES}" -o "${save_release_path}"; then
+        success_msg "镜像已保存到 'build/${save_latest_path}' 和 'build/${save_release_path}'。"
+    else
+        warn_msg "保存镜像到 .dimg 文件失败。"
+    fi
+
+    cd ..
+    info_msg "构建流程完成。"
 }
 
 
 run() {
-    _get_ip 
+    if ! _get_ip && [[ -z "$IP_ADDR4" ]]; then
+         info_msg "无法自动获取IP地址。"
+    fi
 
-    check_image ${IMAGE_NAME} "latest"
+    _check_image "${IMAGE_NAME}" "latest"
     if [ "$?" -ne 0 ]; then
-        docker pull "${IMAGE_RP_USER}/${IMAGE_NAME}:latest"
+        info_msg "本地未找到镜像 ${IMAGE_NAME}:latest，尝试从 ${IMAGE_RP_USER}/${IMAGE_NAME}:latest 拉取..."
+        if ! docker pull "${IMAGE_RP_USER}/${IMAGE_NAME}:latest"; then
+            error_msg "拉取镜像 ${IMAGE_RP_USER}/${IMAGE_NAME}:latest 失败。请检查网络或尝试手动构建 (选项 1)。"
+        else
+            success_msg "镜像 ${IMAGE_RP_USER}/${IMAGE_NAME}:latest 拉取成功。"
+        fi
+    else
+        info_msg "本地已存在镜像 ${IMAGE_NAME}:latest。"
     fi
 
-
-    read -p "使用自动获取的ip地址[${IP_ADDR4}]?(y/n) " use_auto_ip
-    if [[ "$use_auto_ip" =~ ^[Nn]$ ]]; then
-        read -p "请输入IPv4地址: " ipv4
+    echo -e "\n${BLUE}--- IP 地址配置 ---${NC}"
+    local current_ip_prompt="是否使用自动获取的公网 IPv4 地址 [${GREEN}${IP_ADDR4}${YELLOW}]? (y/n): "
+    if [ -z "${IP_ADDR4}" ]; then
+        current_ip_prompt="公网 IPv4 地址未自动获取。是否现在手动输入? (y/n): "
     fi
-
-    read -p "使用默认文件端口[${FILE_SERVER_PORT}]?(y/n) " file_port
-    if [[ "$file_port" =~ ^[Nn]$ ]]; then
-        read -p "请输入新端口: " FILE_SERVER_PORT
+    read -p "$(echo -e "${YELLOW}${current_ip_prompt}${NC}")" use_auto_ip_confirm
+    
+    if [[ "$use_auto_ip_confirm" =~ ^[Nn]$ ]] || ([ -z "${IP_ADDR4}" ] && [[ "$use_auto_ip_confirm" =~ ^[Yy]$ ]]); then
+        read -p "$(echo -e "${YELLOW}请输入您的公网 IPv4 地址: ${NC}")" IP_ADDR4_MANUAL
+        if [ -n "${IP_ADDR4_MANUAL}" ]; then
+            IP_ADDR4=${IP_ADDR4_MANUAL}
+        elif [ -z "${IP_ADDR4}" ]; then 
+            error_msg "未提供公网 IPv4 地址。无法继续。"
+        fi
     fi
+    info_msg "将使用的 IPv4 地址: ${IP_ADDR4}"
 
-    read -p "使用默认管理端口[${API_PORT}]?(y/n) " api_port
-    if [[ "$api_port" =~ ^[Nn]$ ]]; then
-        read -p "请输入新端口: " API_PORT
+    echo -e "\n${BLUE}--- 端口配置 ---${NC}"
+    read -p "$(echo -e "${YELLOW}是否使用默认文件服务端口 [${GREEN}${FILE_SERVER_PORT}${YELLOW}]? (y/n): ${NC}")" use_default_file_port
+    if [[ "$use_default_file_port" =~ ^[Nn]$ ]]; then
+        read -p "$(echo -e "${YELLOW}请输入新的文件服务端口 (例如 3001): ${NC}")" NEW_FILE_SERVER_PORT
+        if [[ "${NEW_FILE_SERVER_PORT}" =~ ^[0-9]+$ ]] && [ "${NEW_FILE_SERVER_PORT}" -gt 0 ] && [ "${NEW_FILE_SERVER_PORT}" -lt 65536 ]; then
+             FILE_SERVER_PORT=${NEW_FILE_SERVER_PORT}
+        elif [ -n "${NEW_FILE_SERVER_PORT}" ]; then
+             warn_msg "无效的端口号 '${NEW_FILE_SERVER_PORT}'。将使用默认端口 ${FILE_SERVER_PORT}。"
+        fi
     fi
+    info_msg "将使用的文件服务端口: ${FILE_SERVER_PORT}"
 
-    # 检查端口占用情况
-    check_port "9993"
-    check_port ${FILE_SERVER_PORT}
-    check_port ${API_PORT}
+    read -p "$(echo -e "${YELLOW}是否使用默认API管理端口 [${GREEN}${API_PORT}${YELLOW}]? (y/n): ${NC}")" use_default_api_port
+    if [[ "$use_default_api_port" =~ ^[Nn]$ ]]; then
+        read -p "$(echo -e "${YELLOW}请输入新的API管理端口 (例如 3444): ${NC}")" NEW_API_PORT
+        if [[ "${NEW_API_PORT}" =~ ^[0-9]+$ ]] && [ "${NEW_API_PORT}" -gt 0 ] && [ "${NEW_API_PORT}" -lt 65536 ]; then
+            API_PORT=${NEW_API_PORT}
+        elif [ -n "${NEW_API_PORT}" ]; then
+            warn_msg "无效的端口号 '${NEW_API_PORT}'。将使用默认端口 ${API_PORT}。"
+        fi
+    fi
+    info_msg "将使用的API管理端口: ${API_PORT}"
+
+    echo -e "\n${BLUE}--- 数据路径配置 ---${NC}"
+    read -p "$(echo -e "${YELLOW}ZeroTier 数据将默认存储在 [${GREEN}${DATA_PATH}${YELLOW}]，是否修改? (y/n): ${NC}")" modify_data_path_confirm
+    if [[ "$modify_data_path_confirm" =~ ^[Yy]$ ]]; then
+        read -p "$(echo -e "${YELLOW}请输入新的数据存储绝对路径 (例如 /opt/zerotier-data): ${NC}")" NEW_DATA_PATH
+        if [ -n "${NEW_DATA_PATH}" ]; then
+            # Basic validation for absolute path
+            if [[ "${NEW_DATA_PATH}" == /* ]]; then
+                DATA_PATH=${NEW_DATA_PATH}
+            else
+                warn_msg "输入的路径 '${NEW_DATA_PATH}' 不是绝对路径。将使用默认路径 ${DATA_PATH}。"
+            fi
+        fi
+    fi
+    # Ensure directory exists
+    if [ ! -d "${DATA_PATH}" ]; then
+        info_msg "数据路径 ${DATA_PATH} 不存在，正在创建..."
+        # Attempt to create with sudo if not root
+        local mkdir_cmd="mkdir -p"
+        local chown_cmd="chown $(id -u):$(id -g)"
+        if [[ $EUID -ne 0 ]]; then
+            mkdir_cmd="sudo ${mkdir_cmd}"
+            chown_cmd="sudo ${chown_cmd}"
+        fi
+
+        if ${mkdir_cmd} "${DATA_PATH}" && ${chown_cmd} "${DATA_PATH}"; then 
+            success_msg "数据路径 ${DATA_PATH} 创建成功。"
+        else
+            error_msg "创建数据路径 ${DATA_PATH} 失败。请检查权限或手动创建并设置正确权限。"
+        fi
+    fi
+    info_msg "将使用的数据路径: ${DATA_PATH}"
+
+
+    info_msg "检查端口占用情况..."
+    _check_port ${ZT_PORT}
+    _check_port ${FILE_SERVER_PORT}
+    _check_port ${API_PORT}
+    success_msg "所需端口未被占用。"
+
 
     _init_env_file
+    success_msg ".env 配置文件已生成/更新。"
 
+    info_msg "正在启动服务 (docker compose up -d)..."
     if docker compose up -d; then
-        echo "启动完成"
+        success_msg "服务启动命令已执行。请等待几秒钟让服务完全启动。"
+        sleep 5 # Give services time to start
+        # Check if containers are running
+        if ! docker compose ps --filter "status=running" | grep -q "${CONTAINER_SERVICE_NAME}"; then 
+            warn_msg "服务 '${CONTAINER_SERVICE_NAME}' 可能未能成功启动。请检查 'docker compose logs ${CONTAINER_SERVICE_NAME}'。"
+        else
+            success_msg "服务 '${CONTAINER_SERVICE_NAME}' 似乎已成功启动。"
+        fi
+    else
+        error_msg "服务启动失败。请检查 'docker compose logs' 获取更多信息。"
     fi
 
-    extract_config
-
+    info_msg "尝试从运行中的服务提取配置..."
+    _extract_config # This populates KEY, MOON_NAME etc. from the running container's data
+    if [ -z "${KEY}" ] || [ -z "${MOON_NAME}" ]; then
+        warn_msg "未能从服务中提取完整的配置信息 (KEY or MOON_NAME missing)。下载链接可能不完整。"
+    else
+        success_msg "配置提取完成。"
+    fi
     print_url
 }
 
+# 更新ZeroTier
 upgrade() {
-        echo "未解决，后续添加"
+        warn_msg "更新功能当前未实现，后续添加。"
 }
 
+# 打印配置信息
 info() {
-    # 读取 .env 文件
-    extract_env
+    info_msg "正在加载配置信息..."
+    if [ ! -f ".env" ]; then
+        warn_msg ".env 文件不存在。部分信息可能无法显示。请先执行 'run' 命令生成 .env 文件。"
+    else
+        # Load variables from .env to display them
+        # Using _extract_env which populates global vars
+        _extract_env
+        success_msg ".env 文件已加载。"
+    fi
+    
+    echo -e "\n${BLUE}--- 解析后的主要配置值 (来自 .env 或默认值) ---${NC}"
+    echo -e "  ${GREEN}公网 IPv4 地址:${NC} ${YELLOW}${IP_ADDR4:-未设置}${NC}"
+    echo -e "  ${GREEN}API 管理端口:${NC} ${YELLOW}${API_PORT:-未设置}${NC}"
+    echo -e "  ${GREEN}文件服务端口:${NC} ${YELLOW}${FILE_SERVER_PORT:-未设置}${NC}"
+    echo -e "  ${GREEN}ZeroTier 默认端口:${NC} ${YELLOW}${ZT_PORT:-9993}${NC} (UDP/TCP)"
+    echo -e "  ${GREEN}数据存储路径:${NC} ${YELLOW}${DATA_PATH:-未设置}${NC}"
 
-    extract_config
-
-    cat ./.env.template| grep "IP_ADDR4" | awk -F= '{print $2}'
-
-    # 读取其它配置文件
-    print_info
+    # Information from _extract_config (reads from ${DATA_PATH}/config/*)
+    # This reflects the state after 'run' and service interaction
+    if [ -n "${DATA_PATH}" ] && [ -d "${DATA_PATH}/config" ] && [ "$(ls -A ${DATA_PATH}/config 2>/dev/null)" ]; then
+        info_msg "尝试从 ${DATA_PATH}/config/ 读取运行时配置..."
+        _extract_config # This populates KEY, MOON_NAME
+        echo -e "\n${BLUE}--- 从 ${DATA_PATH}/config/ 读取的运行时值 ---${NC}"
+        echo -e "  ${GREEN}File Server Key:${NC} ${YELLOW}${KEY:-未找到或未生成}${NC}"
+        echo -e "  ${GREEN}Moon Name:${NC} ${YELLOW}${MOON_NAME:-未找到或未生成}${NC}"
+    else
+        warn_msg "运行时配置文件目录 (${DATA_PATH}/config/) 未找到或为空。KEY 和 MOON_NAME 可能未生成。"
+    fi
+    
+    echo -e "\n${BLUE}--- 访问链接 (基于以上配置) ---${NC}"
+    print_url # Re-use print_url for consistent output
+    echo ""
 }
 
-
+# 重置密码
 resetpwd() {
-    docker exec -it ${CONTAINER_NAME} sh -c 'cp /app/ztncui/src/etc/default.passwd /app/ztncui/src/etc/passwd'
-    if [ $? -ne 0 ]; then
-        echo "重置密码失败"
-        exit 1
+    info_msg "正在尝试重置密码..."
+    if [ -z "${CONTAINER_SERVICE_NAME}" ]; then
+        error_msg "内部错误: CONTAINER_SERVICE_NAME 未定义。"
+        return 1
     fi
 
-    docker restart ${CONTAINER_NAME}
-    if [ $? -ne 0 ]; then
-        echo "重启服务失败"
-        exit 1
+    local container_id
+    # Get the first running container for the service
+    container_id=$(docker compose ps -q "${CONTAINER_SERVICE_NAME}" 2>/dev/null | head -n 1)
+
+    if [ -z "${container_id}" ]; then
+        error_msg "无法找到服务 '${CONTAINER_SERVICE_NAME}' 运行中的容器。请确保服务已通过 'run' 命令启动。"
+        return 1
+    fi
+    
+    info_msg "找到容器 ID: ${container_id} for service ${CONTAINER_SERVICE_NAME}"
+
+    # The path inside the container needs to be correct. Original: /app/ztncui/src/etc/default.passwd
+    local default_passwd_path="/app/ztncui/src/etc/default.passwd"
+    local passwd_path="/app/ztncui/src/etc/passwd"
+    info_msg "将在容器内执行: cp ${default_passwd_path} ${passwd_path}"
+    if docker exec "${container_id}" sh -c "cp '${default_passwd_path}' '${passwd_path}'"; then
+        success_msg "密码文件已在容器内重置。"
+    else
+        error_msg "在容器内执行重置密码命令失败。请检查路径和服务状态。"
+        return 1
     fi
 
-    echo "--------------------------------"
-    echo "重置密码成功"
-    echo "当前用户名 admin, 密码为 password"
-    echo "--------------------------------"
+    info_msg "正在重启服务 '${CONTAINER_SERVICE_NAME}'..."
+    if docker compose restart "${CONTAINER_SERVICE_NAME}"; then
+        success_msg "服务 '${CONTAINER_SERVICE_NAME}' 重启成功。"
+    else
+        error_msg "重启服务 '${CONTAINER_SERVICE_NAME}' 失败。"
+        return 1
+    fi
+
+    echo -e "\n${GREEN}--------------------------------${NC}"
+    echo -e "${GREEN}      密码重置成功！      ${NC}"
+    echo -e "当前用户名: ${YELLOW}admin${NC}, 密码为: ${YELLOW}password${NC}"
+    echo -e "${GREEN}--------------------------------${NC}"
+    warn_msg "请尽快登录并修改密码。"
 }
 
 # ------------
@@ -236,30 +549,224 @@ resetpwd() {
 # ------------
 
 init() {
-    # 检查是否安装docker、docker-compose、docker-buildx
-    docker version | grep "Docker Engine" 2>&1 > /dev/null
-    if [ $? -ne 0 ]; then 
-        echo "你可以通过 https://get.docker.com/ 脚本去安装 Docker"
+    info_msg "开始初始化检查..."
+
+    # Check for essential commands
+    info_msg "检查必要的工具 (curl, ss)..."
+    if ! command -v curl &> /dev/null; then
+        error_msg "'curl' 命令未找到。请安装 curl 后再运行此脚本。"
     fi
+    # `ss` is part of iproute2, usually available.
+    if ! command -v ss &> /dev/null; then
+        # Try to guide the user for common package managers
+        distro_info=$(grep PRETTY_NAME /etc/os-release 2>/dev/null || echo "Unknown")
+        error_msg "'ss' 命令未找到 (通常由 'iproute2' 或 'iproute' 包提供)。请安装它后再运行此脚本. Detected OS: ${distro_info}"
+    fi
+    success_msg "必要的工具已找到。"
+
+    # 检查Docker是否安装
+    info_msg "检查 Docker 是否已安装..."
+    if ! command -v docker &> /dev/null; then
+        warn_msg "Docker 未安装。"
+        echo -ne "${YELLOW}是否尝试使用官方脚本安装 Docker? (y/n): ${NC}"
+        read -r install_docker_confirm
+        if [[ "$install_docker_confirm" =~ ^[Yy]$ ]]; then
+            info_msg "开始安装 Docker... 这可能需要一些时间。"
+            local docker_installed_successfully=false
+            for i in {1..3}; do
+                info_msg "尝试安装 Docker (第 $i 次)..."
+                local install_script_url="https://get.docker.com"
+                # The get.docker.com script handles sudo internally if needed.
+                # However, it's safer to pipe to `sudo bash` if current user is not root.
+                if [[ $EUID -ne 0 ]]; then
+                    info_msg "将使用 'sudo bash' 执行 Docker 安装脚本。"
+                    if curl -fsSL "${install_script_url}" | sudo bash -s docker --mirror Aliyun; then
+                        success_msg "Docker 安装脚本执行完毕。"
+                        docker_installed_successfully=true
+                    else
+                        warn_msg "Docker 安装脚本执行失败 (第 $i 次)。"
+                    fi
+                else
+                    info_msg "将以 root 用户执行 Docker 安装脚本。"
+                    if curl -fsSL "${install_script_url}" | bash -s docker --mirror Aliyun; then
+                        success_msg "Docker 安装脚本执行完毕。"
+                        docker_installed_successfully=true
+                    else
+                        warn_msg "Docker 安装脚本执行失败 (第 $i 次)。"
+                    fi
+                fi
+
+                if ${docker_installed_successfully}; then
+                    # Verify docker command is now available
+                    if command -v docker &> /dev/null; then
+                        success_msg "Docker 命令已可用。"
+                        # Attempt to add user to docker group and start service
+                        if [[ $EUID -ne 0 ]]; then
+                            info_msg "尝试将当前用户 $USER 加入 'docker' 组..."
+                            if sudo usermod -aG docker "$USER"; then
+                                success_msg "用户 $USER 已加入 'docker' 组。请重新登录或执行 'newgrp docker' 使更改生效。"
+                            else
+                                warn_msg "无法自动将用户 $USER 加入 'docker' 组。请手动执行: sudo usermod -aG docker $USER"
+                            fi
+                        fi
+                        if command -v systemctl &> /dev/null; then
+                            info_msg "尝试启动并启用 Docker 服务..."
+                            if sudo systemctl start docker && sudo systemctl enable docker; then
+                                success_msg "Docker 服务已启动并启用。"
+                            else
+                                warn_msg "启动或启用 Docker 服务失败。请手动检查。"
+                            fi
+                        fi
+                        break # Exit loop on success
+                    else
+                        warn_msg "Docker 安装脚本已执行，但 'docker' 命令仍不可用。可能需要重新登录或检查 PATH。"
+                        docker_installed_successfully=false # Mark as failed if command not found
+                    fi
+                fi
+
+                if ! ${docker_installed_successfully} && [ $i -lt 3 ]; then
+                    info_msg "5秒后重试..."
+                    sleep 5
+                fi
+            done
+
+            if ! ${docker_installed_successfully} || ! command -v docker &> /dev/null; then
+                 error_msg "Docker 安装失败。请参考 https://docs.docker.com/engine/install/ 手动安装，或检查 https://status.1panel.top/status/docker 获取镜像源信息，然后重新运行此脚本。"
+            fi
+        else
+            error_msg "Docker 未安装。请先安装 Docker 后再运行此脚本。"
+        fi
+    else
+        success_msg "Docker 已安装: $(docker --version | head -n 1)"
+    fi
+
+    # 检查Docker服务是否运行
+    info_msg "检查 Docker 服务状态..."
+    sleep 2 # Give a moment for service to be fully up if just installed/started
+    if ! docker info > /dev/null 2>&1; then
+        warn_msg "Docker 服务未运行或当前用户无权限访问 Docker 守护进程。"
+        if command -v systemctl &> /dev/null && systemctl list-units --type=service --state=active | grep -q docker.service; then
+             warn_msg "Docker 服务似乎已安装但未正确运行或配置。请检查 'sudo systemctl status docker'。"
+             warn_msg "如果刚将用户添加到 'docker' 组，您可能需要重新登录或执行 'newgrp docker'。"
+        fi
+        
+        echo -ne "${YELLOW}是否尝试启动 Docker 服务 (可能需要sudo权限)? (y/n): ${NC}"
+        read -r start_docker_service_confirm
+        if [[ "$start_docker_service_confirm" =~ ^[Yy]$ ]]; then
+            local start_cmd_prefix=""
+            # Check if sudo is needed for systemctl/service commands
+            if [[ $EUID -ne 0 ]]; then
+                start_cmd_prefix="sudo "
+            fi
+
+            if command -v systemctl &> /dev/null; then
+                info_msg "尝试使用 systemctl 启动 Docker 服务..."
+                if ${start_cmd_prefix}systemctl start docker && ${start_cmd_prefix}systemctl enable docker; then
+                    success_msg "Docker 服务启动/启用命令已执行。"
+                    sleep 3 #给服务一点启动时间
+                    if ! docker info > /dev/null 2>&1; then
+                        error_msg "启动 Docker 服务后，仍无法连接。请手动检查 Docker 服务状态及用户权限 ('newgrp docker' 或重新登录)。"
+                    else
+                        success_msg "Docker 服务已成功连接。"
+                    fi
+                else
+                    error_msg "使用 systemctl 启动 Docker 服务失败。请手动检查并启动 Docker 服务。"
+                fi
+            elif command -v service &> /dev/null; then
+                 info_msg "尝试使用 service 命令启动 Docker 服务..."
+                 if ${start_cmd_prefix}service docker start; then
+                    success_msg "Docker 服务启动命令已执行。"
+                    sleep 3
+                    if ! docker info > /dev/null 2>&1; then
+                        error_msg "启动 Docker 服务后，仍无法连接。请手动检查 Docker 服务状态及用户权限。"
+                    else
+                        success_msg "Docker 服务已成功连接。"
+                    fi
+                 else
+                    error_msg "使用 service 命令启动 Docker 服务失败。请手动检查并启动 Docker 服务。"
+                 fi
+            else
+                warn_msg "无法找到 systemctl 或 service 命令，请手动启动 Docker 服务。"
+                error_msg "Docker 服务未运行。请启动 Docker 服务后再运行此脚本。"
+            fi
+        else
+             error_msg "Docker 服务未运行或无法访问。请启动 Docker 服务并确保用户权限正确后再运行此脚本。"
+        fi
+    else
+        success_msg "Docker 服务正在运行且可访问。"
+    fi
+
+    # 检查 Docker Compose (plugin)
+    info_msg "检查 Docker Compose (plugin)..."
+    if ! docker compose version &> /dev/null; then
+        warn_msg "Docker Compose plugin (docker compose) 未找到。"
+        warn_msg "此脚本需要 Docker Compose V2 (plugin)。"
+        warn_msg "通常，通过 get.docker.com 安装的最新版 Docker 会包含它。"
+        warn_msg "如果您的 Docker 版本较旧或安装方式不同，请参考: https://docs.docker.com/compose/install/"
+        error_msg "请确保 Docker Compose plugin 已正确安装并可用。"
+    else
+        success_msg "Docker Compose plugin 已安装: $(docker compose version | head -n 1)"
+    fi
+
+    # 检查 Docker Buildx
+    info_msg "检查 Docker Buildx..."
+    if ! docker buildx version &> /dev/null; then
+        warn_msg "Docker Buildx 未找到或无法执行。"
+        warn_msg "Docker Buildx 用于构建镜像，是现代 Docker 的一部分。"
+        warn_msg "如果构建功能失败，请确保您的 Docker 安装完整且最新。"
+    else
+        success_msg "Docker Buildx 可用: $(docker buildx version | head -n 1)"
+    fi
+
+    success_msg "初始化检查完成。所有必要组件似乎已就绪。"
 }
 
 main() {
-    echo "ZeroTier部署脚本 - 请不要修改除了 .env 外的任何文件"
-    echo "1. 构建"
-    echo "2. 运行"
-    echo "3. 更新"
-    echo "4. 重置"
-    echo "5. 信息"
-    echo "*. 退出"
-    read -p "请输入数字：" num
+    echo -e "\n${BLUE}=====================================================${NC}"
+    echo -e "${BLUE}        ZeroTier 自建Planet/Moon服务器部署脚本        ${NC}"
+    echo -e "${BLUE}=====================================================${NC}"
+    # Consider adding a VERSION file to your project and displaying it
+    # echo -e "脚本版本: $(cat VERSION 2>/dev/null || echo "dev")"
+    echo -e "项目地址: https://github.com/Xiwin/define-your-zerotier"
+    echo -e "\n${YELLOW}重要提示: 请不要修改除了 .env 之外的任何脚本文件，除非您知道自己在做什么。${NC}\n"
+
+    echo -e "${GREEN}可用操作：${NC}"
+    echo -e "  ${YELLOW}1)${NC} 构建镜像 (Build)"
+    echo -e "  ${YELLOW}2)${NC} 运行服务 (Run)"
+    echo -e "  ${YELLOW}3)${NC} 更新服务 (Upgrade) ${RED}(功能未完成)${NC}"
+    echo -e "  ${YELLOW}4)${NC} 重置密码 (Reset Password)"
+    echo -e "  ${YELLOW}5)${NC} 显示信息 (Info)"
+    echo -e "  ${YELLOW}*)${NC} 退出 (Exit)"
+    echo -ne "${BLUE}请输入操作对应的数字: ${NC}"
+    read -r num # Use -r for robustness
 
     case "$num" in
-    1) build;;
-    2) run;;
-    3) upgrade;;
-    4) resetpwd;;
-    5) info;;
-    *) exit;;
+    1)
+        info_msg "开始执行构建任务..."
+        build
+        # build function should have its own success/error messages
+        ;;
+    2)
+        info_msg "开始执行运行任务..."
+        run
+        # run function should have its own success/error messages
+        ;;
+    3)
+        # warn_msg "更新功能当前未实现。" # upgrade function has its own message
+        upgrade
+        ;;
+    4)
+        info_msg "开始执行重置密码任务..."
+        resetpwd
+        ;;
+    5)
+        info_msg "开始执行显示信息任务..."
+        info
+        ;;
+    *)
+        info_msg "退出脚本。"
+        exit 0
+        ;;
     esac
 }
 
