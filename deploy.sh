@@ -299,9 +299,9 @@ build() {
     cd build/
     info_msg "进入 'build/' 目录，开始执行实际构建过程 (Build ${IMAGE_NAME} ${RELEASES})..."
 
-    Build
+    
 
-    if ! ./build.sh "${IMAGE_NAME}" "${RELEASES}"; then 
+    if ! Build "${IMAGE_NAME}" "${RELEASES}"; then 
         error_msg "Docker 镜像构建失败。请检查 './build.sh' 脚本的输出。"
         cd ..
         return 1
