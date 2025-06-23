@@ -299,16 +299,7 @@ build() {
     cd build/
     info_msg "进入 'build/' 目录，开始执行实际构建过程 (Build ${IMAGE_NAME} ${RELEASES})..."
 
-    if [ ! -x "./build.sh" ]; then
-        warn_msg "./build.sh 不可执行，尝试添加执行权限..."
-        chmod +x ./build.sh
-        if [ ! -x "./build.sh" ]; then
-            error_msg "./build.sh 仍然不可执行。请检查文件权限。"
-            cd ..
-            return 1
-        fi
-    fi
-
+    Build
 
     if ! ./build.sh "${IMAGE_NAME}" "${RELEASES}"; then 
         error_msg "Docker 镜像构建失败。请检查 './build.sh' 脚本的输出。"
