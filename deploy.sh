@@ -18,7 +18,6 @@ IP_ADDR4=""
 # IP_ADDR6=""
 API_PORT="3443"
 ZT_PORT="9993" # ZeroTier默认端口,不要修改
-FILE_SERVER_PORT="3000"
 DATA_PATH="/data/zerotier"
 
 # Global Var
@@ -87,7 +86,6 @@ _init_env_file() {
     sed -e "s#__IP_ADDR4__#${IP_ADDR4}#" \
     # -e "s#__IP_ADDR6__#${IP_ADDR6}#" \
     -e "s#__API_PORT__#${API_PORT}#" \
-    -e "s#__FILE_SERVER_PORT__#${FILE_SERVER_PORT}#" \
     -e "s#__DATA_PATH__#${DATA_PATH}#" \
     .env.template > .env
 }
@@ -163,19 +161,9 @@ print_url() {
         warn_msg "IP 地址或 API 端口未完全配置，无法生成 Web UI 链接。"
     fi
 
-    echo -e "\n${BLUE}--- 文件下载信息 ---${NC}"
+    echo -e "\n${BLUE}--- Planet和Moon文件信息 ---${NC}"
     if [ -n "${DATA_PATH}" ]; then
          echo -e "Moon配置文件和Planet配置文件位于宿主机路径: ${YELLOW}${DATA_PATH}/dist${NC}"
-    fi
-    if [ -n "${IP_ADDR4}" ] && [ -n "${FILE_SERVER_PORT}" ] && [ -n "${KEY}" ]; then
-        if [ -n "${MOON_NAME}" ]; then
-            echo -e "Moon (${MOON_NAME}) 文件下载链接: ${YELLOW}http://${IP_ADDR4}:${FILE_SERVER_PORT}/${MOON_NAME}?key=${KEY}${NC}"
-        else
-            warn_msg "Moon Name 未找到，Moon 下载链接不完整。"
-        fi
-        echo -e "Planet 文件下载链接: ${YELLOW}http://${IP_ADDR4}:${FILE_SERVER_PORT}/planet?key=${KEY}${NC}"
-    else
-        warn_msg "部分文件下载链接信息不完整 (IP, File Port, or Key 未设置/找到)。"
     fi
 
     echo -e "\n${BLUE}--- 防火墙提醒 ---${NC}"
@@ -183,7 +171,6 @@ print_url() {
     echo -e "  - ${YELLOW}${ZT_PORT}/tcp${NC} (ZeroTier)"
     echo -e "  - ${YELLOW}${ZT_PORT}/udp${NC} (ZeroTier)"
     echo -e "  - ${YELLOW}${API_PORT}/tcp${NC} (Web UI)"
-    echo -e "  - ${YELLOW}${FILE_SERVER_PORT}/tcp${NC} (文件服务)"
     echo -e "\n${BLUE}===============================================================${NC}\n"
 }
 
@@ -235,17 +222,15 @@ _extract_env() {
         temp_ip4=$(grep -E "^IP_ADDR4=" "${key_file}" | cut -d= -f2-)
         # IP_ADDR6=$(grep -E "^IP_ADDR6=" "${key_file}" | cut -d= -f2-)
         api_p=$(grep -E "^API_PORT=" "${key_file}" | cut -d= -f2-)
-        f_server_p=$(grep -E "^FILE_SERVER_PORT=" "${key_file}" | cut -d= -f2-)
         data_p=$(grep -E "^DATA_PATH=" "${key_file}" | cut -d= -f2-)
 
         # Update global variables if values were found in .env
         [ -n "$temp_ip4" ] && IP_ADDR4="$temp_ip4"
         [ -n "$api_p" ] && API_PORT="$api_p"
-        [ -n "$f_server_p" ] && FILE_SERVER_PORT="$f_server_p"
         [ -n "$data_p" ] && DATA_PATH="$data_p"
 
         # Validate that essential variables were loaded
-        if [ -z "${API_PORT}" ] || [ -z "${FILE_SERVER_PORT}" ] || [ -z "${DATA_PATH}" ]; then
+        if [ -z "${API_PORT}" ] || [ -z "${DATA_PATH}" ]; then
              warn_msg ".env 文件部分配置项未能正确加载。请检查文件格式。"
         fi
     else
@@ -360,17 +345,6 @@ run() {
     info_msg "将使用的 IPv4 地址: ${IP_ADDR4}"
 
     echo -e "\n${BLUE}--- 端口配置 ---${NC}"
-    read -p "$(echo -e "${YELLOW}是否使用默认文件服务端口 [${GREEN}${FILE_SERVER_PORT}${YELLOW}]? (y/n): ${NC}")" use_default_file_port
-    if [[ "$use_default_file_port" =~ ^[Nn]$ ]]; then
-        read -p "$(echo -e "${YELLOW}请输入新的文件服务端口 (例如 3001): ${NC}")" NEW_FILE_SERVER_PORT
-        if [[ "${NEW_FILE_SERVER_PORT}" =~ ^[0-9]+$ ]] && [ "${NEW_FILE_SERVER_PORT}" -gt 0 ] && [ "${NEW_FILE_SERVER_PORT}" -lt 65536 ]; then
-             FILE_SERVER_PORT=${NEW_FILE_SERVER_PORT}
-        elif [ -n "${NEW_FILE_SERVER_PORT}" ]; then
-             warn_msg "无效的端口号 '${NEW_FILE_SERVER_PORT}'。将使用默认端口 ${FILE_SERVER_PORT}。"
-        fi
-    fi
-    info_msg "将使用的文件服务端口: ${FILE_SERVER_PORT}"
-
     read -p "$(echo -e "${YELLOW}是否使用默认API管理端口 [${GREEN}${API_PORT}${YELLOW}]? (y/n): ${NC}")" use_default_api_port
     if [[ "$use_default_api_port" =~ ^[Nn]$ ]]; then
         read -p "$(echo -e "${YELLOW}请输入新的API管理端口 (例如 3444): ${NC}")" NEW_API_PORT
@@ -417,7 +391,6 @@ run() {
 
     info_msg "检查端口占用情况..."
     _check_port ${ZT_PORT}
-    _check_port ${FILE_SERVER_PORT}
     _check_port ${API_PORT}
     success_msg "所需端口未被占用。"
 
@@ -469,7 +442,6 @@ info() {
     echo -e "\n${BLUE}--- 解析后的主要配置值 (来自 .env 或默认值) ---${NC}"
     echo -e "  ${GREEN}公网 IPv4 地址:${NC} ${YELLOW}${IP_ADDR4:-未设置}${NC}"
     echo -e "  ${GREEN}API 管理端口:${NC} ${YELLOW}${API_PORT:-未设置}${NC}"
-    echo -e "  ${GREEN}文件服务端口:${NC} ${YELLOW}${FILE_SERVER_PORT:-未设置}${NC}"
     echo -e "  ${GREEN}ZeroTier 默认端口:${NC} ${YELLOW}${ZT_PORT:-9993}${NC} (UDP/TCP)"
     echo -e "  ${GREEN}数据存储路径:${NC} ${YELLOW}${DATA_PATH:-未设置}${NC}"
 
@@ -743,7 +715,7 @@ main() {
         # run function should have its own success/error messages
         ;;
     3)
-        # warn_msg "更新功能当前未实现。" # upgrade function has its own message
+        # warn_msg "更新功能当前未实现。" 
         upgrade
         ;;
     4)
