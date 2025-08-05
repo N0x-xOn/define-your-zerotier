@@ -4,7 +4,7 @@ source build/build.sh
 
 # 构建所需变量
 IMAGE_NAME="define-your-zerotier"
-IMAGE_RP_USER="xoneki"
+IMAGE_RP_USER="shawing"
 ZTN_RP="ZeroTierOne"
 ZTN_RP_USER="zerotier"
 RELEASES=""
@@ -16,14 +16,13 @@ PUBLIC_IPv4_CHECK_URL="https://ipv4.icanhazip.com/"
 # .env 配置文件内容
 IP_ADDR4=""
 # IP_ADDR6=""
-API_PORT="3443"
+API_PORT="3443" # Ztncui 端口
 ZT_PORT="9993" # ZeroTier默认端口,不要修改
-DATA_PATH="/data/zerotier"
+DATA_PATH="/data/zerotier" # 默认数据存放
 
 # Global Var
-KEY=""
 MOON_NAME=""
-CONTAINER_SERVICE_NAME="zerotier-server" # Adjust if your docker-compose service name is different
+CONTAINER_SERVICE_NAME="zerotier-server"
 
 # Colors
 GREEN='\033[0;32m'
@@ -84,7 +83,6 @@ _getReleaseVersion() {
 
 _init_env_file() {
     sed -e "s#__IP_ADDR4__#${IP_ADDR4}#" \
-    # -e "s#__IP_ADDR6__#${IP_ADDR6}#" \
     -e "s#__API_PORT__#${API_PORT}#" \
     -e "s#__DATA_PATH__#${DATA_PATH}#" \
     .env.template > .env
@@ -119,7 +117,7 @@ _check_image() {
     local image_tag=$2
 
     if [ -z "${image_name}" ] || [ -z "${image_tag}" ]; then
-        error_msg "内部错误: _check_image 调用时镜像名称或标签为空。" # Should not happen
+        error_msg "内部错误: _check_image 调用时镜像名称或标签为空。"
         return 1
     fi
 
@@ -136,8 +134,6 @@ _check_image() {
 # $1 des port
 _check_port() {
     local port=$1
-    # Check if any process is listening on that port number (TCP or UDP)
-    # Use sudo if not root, as ss might require it for -p option
     local ss_cmd="ss -tulnp"
     if [[ $EUID -ne 0 ]]; then
         ss_cmd="sudo ${ss_cmd}"
@@ -182,28 +178,24 @@ print_url() {
 _extract_config() {
     _extract() {
         local config_name=$1
-        # Ensure DATA_PATH is set and directory exists
         if [ -z "${DATA_PATH}" ] || [ ! -d "${DATA_PATH}/config" ]; then
-            # warn_msg "在 _extract 中: DATA_PATH 未设置或 ${DATA_PATH}/config 不存在。"
+            warn_msg "在 _extract 中: DATA_PATH 未设置或 ${DATA_PATH}/config 不存在。"
             return
         fi
         if [ ! -f "${DATA_PATH}/config/${config_name}" ]; then
-            # warn_msg "在 _extract 中: 配置文件 ${DATA_PATH}/config/${config_name} 未找到。"
+            warn_msg "在 _extract 中: 配置文件 ${DATA_PATH}/config/${config_name} 未找到。"
             return
         fi
         cat "${DATA_PATH}/config/${config_name}" | tr -d '\r'
     }
-    # Only update IP_ADDR4 if it's not already set (e.g. by user input or initial _get_ip)
-    # This allows user-set IP to persist over what might be in the config file (which could be an internal IP)
+
     local temp_ip4
     temp_ip4=$(_extract "ip_addr4")
     if [ -z "${IP_ADDR4}" ] && [ -n "${temp_ip4}" ]; then
         IP_ADDR4=${temp_ip4}
     fi
-    # IP_ADDR6=$(_extract "ip_addr6") # Currently commented out
-    KEY=$(_extract "file_server.key")
+    # IP_ADDR6=$(_extract "ip_addr6")
 
-    # Ensure DATA_PATH is set and directory exists for ls
     if [ -n "${DATA_PATH}" ] && [ -d "${DATA_PATH}/dist" ]; then
         MOON_NAME=$(ls "${DATA_PATH}/dist" 2>/dev/null | grep moon | tr -d '\r' | head -n 1)
     else
@@ -216,25 +208,65 @@ _extract_config() {
 _extract_env() {
     local key_file="${PWD}/.env"
     if [ -f "${key_file}" ]; then
-        # Source the .env file to load all variables, safer than individual greps if format is consistent
-        # Or use more robust parsing:
         local temp_ip4 api_p f_server_p data_p
         temp_ip4=$(grep -E "^IP_ADDR4=" "${key_file}" | cut -d= -f2-)
         # IP_ADDR6=$(grep -E "^IP_ADDR6=" "${key_file}" | cut -d= -f2-)
         api_p=$(grep -E "^API_PORT=" "${key_file}" | cut -d= -f2-)
         data_p=$(grep -E "^DATA_PATH=" "${key_file}" | cut -d= -f2-)
 
-        # Update global variables if values were found in .env
         [ -n "$temp_ip4" ] && IP_ADDR4="$temp_ip4"
         [ -n "$api_p" ] && API_PORT="$api_p"
         [ -n "$data_p" ] && DATA_PATH="$data_p"
 
-        # Validate that essential variables were loaded
         if [ -z "${API_PORT}" ] || [ -z "${DATA_PATH}" ]; then
              warn_msg ".env 文件部分配置项未能正确加载。请检查文件格式。"
         fi
     else
         error_msg ".env 环境配置文件不存在，请先执行 'run' 命令生成。"
+    fi
+}
+
+# 函数：根据系统类型静默安装软件包
+_install_package() {
+    local DEBIAN_PKG_NAME="libreadline-dev"
+    local REDHAT_PKG_NAME="readline-devel"
+
+    # 检查是否是 Debian/Ubuntu
+    if command -v apt-get &> /dev/null; then
+        # 检查软件包是否已安装
+        if dpkg -s "$DEBIAN_PKG_NAME" &> /dev/null; then
+            return 0
+        fi
+        sudo apt-get -qq update
+        if ! sudo apt-get -qq install -y "$DEBIAN_PKG_NAME"; then
+            return 1
+        fi
+        return 0
+
+    # 检查是否是 Red Hat/CentOS/Fedora
+    elif command -v yum &> /dev/null; then
+        # 检查软件包是否已安装
+        if yum list installed "$REDHAT_PKG_NAME" &> /dev/null; then
+            return 0
+        fi
+        if ! sudo yum install -y "$REDHAT_PKG_NAME"; then
+            return 1
+        fi
+        return 0
+    # 检查是否是较新的 Fedora/RHEL (使用 dnf)
+    elif command -v dnf &> /dev/null; then
+        # 检查软件包是否已安装
+        if dnf list installed "$REDHAT_PKG_NAME" &> /dev/null; then
+            return 0
+        fi
+        
+        if ! sudo dnf install -y "$REDHAT_PKG_NAME"; then
+            return 1
+        fi
+        return 0
+    # 无法识别系统
+    else
+        return 1
     fi
 }
 
@@ -293,16 +325,20 @@ build() {
     fi
     success_msg "Docker 镜像 ${IMAGE_NAME}:${RELEASES} 和 ${IMAGE_NAME}:latest 构建成功。"
     
-    info_msg "正在保存镜像到 .dimg 文件..."
-    mkdir -p img/
-    local save_latest_path="img/${IMAGE_NAME}_latest.dimg"
-    local save_release_path="img/${IMAGE_NAME}_${RELEASES}.dimg"
 
-    if docker image save "${IMAGE_NAME}:latest" -o "${save_latest_path}" && \
-       docker image save "${IMAGE_NAME}:${RELEASES}" -o "${save_release_path}"; then
-        success_msg "镜像已保存到 'build/${save_latest_path}' 和 'build/${save_release_path}'。"
-    else
-        warn_msg "保存镜像到 .dimg 文件失败。"
+    read -p "是否保存镜像？[Y/n]:" save
+    if [[ "${save}" =~ ^[Yy]$ ]]; then
+        info_msg "正在保存镜像到 .dimg 文件..."
+        mkdir -p img/
+        local save_latest_path="img/${IMAGE_NAME}_latest.dimg"
+        local save_release_path="img/${IMAGE_NAME}_${RELEASES}.dimg"
+
+        if docker image save "${IMAGE_NAME}:latest" -o "${save_latest_path}" && \
+        docker image save "${IMAGE_NAME}:${RELEASES}" -o "${save_release_path}"; then
+            success_msg "镜像已保存到 'build/${save_latest_path}' 和 'build/${save_release_path}'。"
+        else
+            warn_msg "保存镜像到 .dimg 文件失败。"
+        fi
     fi
 
     cd ..
@@ -359,9 +395,8 @@ run() {
     echo -e "\n${BLUE}--- 数据路径配置 ---${NC}"
     read -p "$(echo -e "${YELLOW}ZeroTier 数据将默认存储在 [${GREEN}${DATA_PATH}${YELLOW}]，是否修改? (y/n): ${NC}")" modify_data_path_confirm
     if [[ "$modify_data_path_confirm" =~ ^[Yy]$ ]]; then
-        read -p "$(echo -e "${YELLOW}请输入新的数据存储绝对路径 (例如 /opt/zerotier-data): ${NC}")" NEW_DATA_PATH
+        read -e -p "$(echo -e "${YELLOW}请输入新的数据存储绝对路径 (例如 /opt/zerotier-data): ${NC}")" NEW_DATA_PATH
         if [ -n "${NEW_DATA_PATH}" ]; then
-            # Basic validation for absolute path
             if [[ "${NEW_DATA_PATH}" == /* ]]; then
                 DATA_PATH=${NEW_DATA_PATH}
             else
@@ -369,7 +404,7 @@ run() {
             fi
         fi
     fi
-    # Ensure directory exists
+    # 确保目录存在
     if [ ! -d "${DATA_PATH}" ]; then
         info_msg "数据路径 ${DATA_PATH} 不存在，正在创建..."
         # Attempt to create with sudo if not root
@@ -413,9 +448,9 @@ run() {
     fi
 
     info_msg "尝试从运行中的服务提取配置..."
-    _extract_config # This populates KEY, MOON_NAME etc. from the running container's data
-    if [ -z "${KEY}" ] || [ -z "${MOON_NAME}" ]; then
-        warn_msg "未能从服务中提取完整的配置信息 (KEY or MOON_NAME missing)。下载链接可能不完整。"
+    _extract_config 
+    if [ -z "${MOON_NAME}" ]; then
+        warn_msg "未能从服务中提取完整的配置信息 (MOON_NAME missing)。下载链接可能不完整。"
     else
         success_msg "配置提取完成。"
     fi
@@ -449,12 +484,11 @@ info() {
     # This reflects the state after 'run' and service interaction
     if [ -n "${DATA_PATH}" ] && [ -d "${DATA_PATH}/config" ] && [ "$(ls -A ${DATA_PATH}/config 2>/dev/null)" ]; then
         info_msg "尝试从 ${DATA_PATH}/config/ 读取运行时配置..."
-        _extract_config # This populates KEY, MOON_NAME
+        _extract_config
         echo -e "\n${BLUE}--- 从 ${DATA_PATH}/config/ 读取的运行时值 ---${NC}"
-        echo -e "  ${GREEN}File Server Key:${NC} ${YELLOW}${KEY:-未找到或未生成}${NC}"
         echo -e "  ${GREEN}Moon Name:${NC} ${YELLOW}${MOON_NAME:-未找到或未生成}${NC}"
     else
-        warn_msg "运行时配置文件目录 (${DATA_PATH}/config/) 未找到或为空。KEY 和 MOON_NAME 可能未生成。"
+        warn_msg "运行时配置文件目录 (${DATA_PATH}/config/) 未找到或为空。MOON_NAME 可能未生成。"
     fi
     
     echo -e "\n${BLUE}--- 访问链接 (基于以上配置) ---${NC}"
@@ -519,12 +553,13 @@ init() {
     if ! command -v curl &> /dev/null; then
         error_msg "'curl' 命令未找到。请安装 curl 后再运行此脚本。"
     fi
-    # `ss` is part of iproute2, usually available.
     if ! command -v ss &> /dev/null; then
-        # Try to guide the user for common package managers
         distro_info=$(grep PRETTY_NAME /etc/os-release 2>/dev/null || echo "Unknown")
         error_msg "'ss' 命令未找到 (通常由 'iproute2' 或 'iproute' 包提供)。请安装它后再运行此脚本. Detected OS: ${distro_info}"
     fi
+
+    _install_package
+
     success_msg "必要的工具已找到。"
 
     # 检查Docker是否安装
@@ -539,8 +574,6 @@ init() {
             for i in {1..3}; do
                 info_msg "尝试安装 Docker (第 $i 次)..."
                 local install_script_url="https://get.docker.com"
-                # The get.docker.com script handles sudo internally if needed.
-                # However, it's safer to pipe to `sudo bash` if current user is not root.
                 if [[ $EUID -ne 0 ]]; then
                     info_msg "将使用 'sudo bash' 执行 Docker 安装脚本。"
                     if curl -fsSL "${install_script_url}" | sudo bash -s docker --mirror Aliyun; then
@@ -560,10 +593,8 @@ init() {
                 fi
 
                 if ${docker_installed_successfully}; then
-                    # Verify docker command is now available
                     if command -v docker &> /dev/null; then
                         success_msg "Docker 命令已可用。"
-                        # Attempt to add user to docker group and start service
                         if [[ $EUID -ne 0 ]]; then
                             info_msg "尝试将当前用户 $USER 加入 'docker' 组..."
                             if sudo usermod -aG docker "$USER"; then
@@ -580,10 +611,10 @@ init() {
                                 warn_msg "启动或启用 Docker 服务失败。请手动检查。"
                             fi
                         fi
-                        break # Exit loop on success
+                        break
                     else
                         warn_msg "Docker 安装脚本已执行，但 'docker' 命令仍不可用。可能需要重新登录或检查 PATH。"
-                        docker_installed_successfully=false # Mark as failed if command not found
+                        docker_installed_successfully=false
                     fi
                 fi
 
@@ -605,7 +636,7 @@ init() {
 
     # 检查Docker服务是否运行
     info_msg "检查 Docker 服务状态..."
-    sleep 2 # Give a moment for service to be fully up if just installed/started
+    sleep 2
     if ! docker info > /dev/null 2>&1; then
         warn_msg "Docker 服务未运行或当前用户无权限访问 Docker 守护进程。"
         if command -v systemctl &> /dev/null && systemctl list-units --type=service --state=active | grep -q docker.service; then
@@ -617,7 +648,6 @@ init() {
         read -r start_docker_service_confirm
         if [[ "$start_docker_service_confirm" =~ ^[Yy]$ ]]; then
             local start_cmd_prefix=""
-            # Check if sudo is needed for systemctl/service commands
             if [[ $EUID -ne 0 ]]; then
                 start_cmd_prefix="sudo "
             fi
@@ -688,8 +718,6 @@ main() {
     echo -e "\n${BLUE}=====================================================${NC}"
     echo -e "${BLUE}        ZeroTier 自建Planet/Moon服务器部署脚本        ${NC}"
     echo -e "${BLUE}=====================================================${NC}"
-    # Consider adding a VERSION file to your project and displaying it
-    # echo -e "脚本版本: $(cat VERSION 2>/dev/null || echo "dev")"
     echo -e "项目地址: https://github.com/Xiwin/define-your-zerotier"
     echo -e "\n${YELLOW}重要提示: 请不要修改除了 .env 之外的任何脚本文件，除非您知道自己在做什么。${NC}\n"
 
@@ -701,21 +729,18 @@ main() {
     echo -e "  ${YELLOW}5)${NC} 显示信息 (Info)"
     echo -e "  ${YELLOW}*)${NC} 退出 (Exit)"
     echo -ne "${BLUE}请输入操作对应的数字: ${NC}"
-    read -r num # Use -r for robustness
+    read -r num
 
     case "$num" in
     1)
         info_msg "开始执行构建任务..."
         build
-        # build function should have its own success/error messages
         ;;
     2)
         info_msg "开始执行运行任务..."
         run
-        # run function should have its own success/error messages
         ;;
     3)
-        # warn_msg "更新功能当前未实现。" 
         upgrade
         ;;
     4)

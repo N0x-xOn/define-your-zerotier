@@ -13,7 +13,7 @@ ZTNCUI_SRC_PATH="${ZTNCUI_PATH}/src"
 # 启动 ZeroTier 和 ztncui
 function start() {
     echo "Start ztncui and zerotier"
-    cd $ZEROTIER_PATH && ./zerotier-one -p$(cat ${CONFIG_PATH}/zerotier-one.port) -d || exit 1
+    cd $ZEROTIER_PATH && zerotier-one -p$(cat ${CONFIG_PATH}/zerotier-one.port) -d || exit 1
     nohup node ${APP_PATH}/http_server.js &> ${APP_PATH}/server.log & 
     cd $ZTNCUI_SRC_PATH && npm start || exit 1
 }
@@ -64,7 +64,7 @@ function init_zerotier_data() {
 
     # 这一步是生成moon配置文件
     # 方便能够添加moon节点的设备使用
-    ./zerotier-idtool genmoon moon.json && mkdir -p moons.d && cp ./*.moon ./moons.d
+    zerotier-idtool genmoon moon.json && mkdir -p moons.d && cp ./*.moon ./moons.d
 
     # 生成planet
     # @require 必须要当前目录下的 moon.json 文件
