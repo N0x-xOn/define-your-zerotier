@@ -13,42 +13,33 @@ ZTNCUI_SRC_PATH="${ZTNCUI_PATH}/src"
 # 启动 ZeroTier 和 ztncui
 function start() {
     echo "Start ztncui and zerotier"
-    cd $ZEROTIER_PATH && ./zerotier-one -p$(cat ${CONFIG_PATH}/zerotier-one.port) -d || exit 1
+    cd $ZEROTIER_PATH && zerotier-one -p$(cat ${CONFIG_PATH}/zerotier-one.port) -d || exit 1
     nohup node ${APP_PATH}/http_server.js &> ${APP_PATH}/server.log & 
     cd $ZTNCUI_SRC_PATH && npm start || exit 1
-}
-
-# 检查文件服务器端口配置文件
-function check_file_server() {
-    if [ ! -f "${CONFIG_PATH}/file_server.port" ]; then
-        echo "file_server.port does not exist, generating it"
-        echo "${FILE_SERVER_PORT}" > ${CONFIG_PATH}/file_server.port
-    else
-        echo "file_server.port exists, reading it"
-        FILE_SERVER_PORT=$(cat ${CONFIG_PATH}/file_server.port)
-    fi
-    echo "${FILE_SERVER_PORT}"
 }
 
 # 初始化 ZeroTier 数据
 function init_zerotier_data() {
     echo "Initializing ZeroTier data"
+
     echo "${ZT_PORT}" > ${CONFIG_PATH}/zerotier-one.port
+
+    # 将/bak目录下的文件恢复
     cp -r ${BACKUP_PATH}/zerotier-one/* $ZEROTIER_PATH
 
     cd $ZEROTIER_PATH
+
+    # 生成ZeroTier API访问密钥
     openssl rand -hex 16 > authtoken.secret
+
+    # 生成moon.json文件，为便后续使用
     ./zerotier-idtool generate identity.secret identity.public
     ./zerotier-idtool initmoon identity.public > moon.json
 
-    IP_ADDR4=${IP_ADDR4:-$(curl -s https://ipv4.icanhazip.com/)}
-    IP_ADDR6=${IP_ADDR6:-$(curl -s https://ipv6.icanhazip.com/)}
-
-    echo "IP_ADDR4=$IP_ADDR4"
-    echo "IP_ADDR6=$IP_ADDR6"
+    # 保存ZeroTier端口信息
     ZT_PORT=$(cat ${CONFIG_PATH}/zerotier-one.port)
-    echo "ZT_PORT=$ZT_PORT"
 
+    # 判断IP_ADDR4是否为空
     if [ -n "$IP_ADDR4" ] && [ -n "$IP_ADDR6" ]; then
         stableEndpoints="[\"$IP_ADDR4/${ZT_PORT}\",\"$IP_ADDR6/${ZT_PORT}\"]"
     elif [ -n "$IP_ADDR4" ]; then
@@ -60,19 +51,37 @@ function init_zerotier_data() {
         exit 1
     fi
 
+    # 保存ip地址
     echo "$IP_ADDR4" > ${CONFIG_PATH}/ip_addr4
     echo "$IP_ADDR6" > ${CONFIG_PATH}/ip_addr6
     echo "stableEndpoints=$stableEndpoints"
 
+    # 上文中生成的moon.json文件中的stableEndpoints内容为空
+    # 这里将我们的planet公网IP填充进去
+    # ["ip/port"]
     jq --argjson newEndpoints "$stableEndpoints" '.roots[0].stableEndpoints = $newEndpoints' moon.json > temp.json && mv temp.json moon.json
-    ./zerotier-idtool genmoon moon.json && mkdir -p moons.d && cp ./*.moon ./moons.d
 
+
+    # 这一步是生成moon配置文件
+    # 方便能够添加moon节点的设备使用
+    zerotier-idtool genmoon moon.json && mkdir -p moons.d && cp ./*.moon ./moons.d
+
+    # 生成planet
+    # @require 必须要当前目录下的 moon.json 文件
+    # @return 若无错误，则会输出一个名为 world.bin的文件
+    #         并输出该文件的Hex内容
+    # @note 在后续的过程中，可以通过 mkworld -b 
+    #       查看我们的planet文件（当前目录下必须有名为 world.bin）
+    #       可以将生成后的planet重命名复制到当前目录下
     ./mkworld
     if [ $? -ne 0 ]; then
         echo "mkmoonworld failed!"
         exit 1
     fi
 
+    # 保存planet和moon文件
+    # TODO 将world.bin 移动为 /dist/planet
+    #      将000000984b24cc0a.moon样式的moon文件拷贝到/dist/中
     mkdir -p ${APP_PATH}/dist/
     mv world.bin ${APP_PATH}/dist/planet
     cp *.moon ${APP_PATH}/dist/
@@ -119,7 +128,6 @@ function check_ztncui() {
     fi
 }
 
-check_file_server
 check_zerotier
 check_ztncui
 start

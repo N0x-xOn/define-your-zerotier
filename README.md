@@ -6,6 +6,16 @@
 2. 在Mac设备上，无法连接Moon服务器
 3. Moon 设备的握手需要通过planet进行，默认的planet服务器都在国外
 
+## 注意事项
+
+使用该仓库所构建的ZeroTier-One镜像不支持加入网络，因为是控制器版本，所以连peer信息也没有，`zerotier-cli`命令无效，但是保留了`api`服务功能，可以通过该API服务，进行二次开发。
+
+后续可能会剔除，Ztncui，NPM管理占用实在太大了，我不想镜像包这么大，所以我正在开发Ztncui的替代版本。
+
+在启动容器后，你应该在本机上再安装一个ZeroTier的客户端，然后替换`planet`文件，加入控制器创建的网络中。不建议在裸机上运行ZeroTier-One，这会导致你的ZeroTier控制器无法加入网络管理。
+
+暂时不支持IPv6，Dockerfile的内容也是为国内用户设计的，国外的话就没有必要自建Planet了，直接使用moon的方式更好一点。
+
 ## 使用
 
 ```shell
@@ -18,29 +28,61 @@ sudo deploy.sh
 
 `deploy.sh` 部署脚本，自带6个功能：
 
-1. 构建: 构建镜像会导出一份本地镜像
-2. 运行: 拉取远程镜像并运行
+1. 构建: 构建镜像会导出一份本地镜像（主要使用构建即可，镜像太大，通过Hub进行分发太麻烦了）
+2. 运行: 拉取远程镜像并运行（如果你能看懂compose文件，该功能对你用处不大）
 3. 配置: 设置运行配置
-4. 打印信息: file下载路径、planet key 和 moon 名称
-5. 重置密码: 重置Ztncui管理面板账号密码
+4. 打印信息: planet 和 moon 
+5. 重置密码: 重置Ztncui管理面板账号密码（可以去Ztncui官网查看如何重置密码，不必依赖该功能）
 
 > 注意1：主机映射9993/tcp 和 9993/udp 端口不可更改。若出现，9993端口冲突，请优先考虑ZeroTier，若Planet的端口不为9993，Client将无法连接。
 
-> 注意2：可以直接使用sftp或scp工具下载 planet 到本地，无需开启文件下载端口。文件下载端口仅仅适用于脚本化部署客户端使用。
+> 注意2：可以直接使用sftp或scp工具下载 planet 到本地，planet和moon文件存放在/dist目录中
 
 ## 目录结构
 
 ```shell
 .
-├── README.md
-├── build # 构建docker镜像相关文件
-│   ├── Dockerfile
+├── build
 │   ├── build.sh
+│   ├── Dockerfile
+│   ├── img
+│   │   ├── define-your-zerotier_1.14.2.dimg
+│   │   └── define-your-zerotier_latest.dimg
 │   └── patch
+│       ├── cargo_config
 │       ├── entrypoint.sh
-│       ├── http_server.js
 │       └── mkworld_custom.cpp
-├── deploy.sh # 脚本化部署流程
-├── docker-compose.yaml # 通过Compose管理Docker容器
-└── img # 构建后save和load目录
+├── deploy.sh
+├── docker-compose.yaml
+├── README.assets
+│   └── image.png
+└── README.md
 ```
+
+## Dockerfile描述
+
+Dockefile 使用 Docker 的buildx插件来将镜像的build的拆分为两个部分：
+
++ 构建基础软件，zerotier-one控制器版本和Ztncui
++ 通过 `COPY --from=builder` 拷贝构建完成的软件
+
+采用的镜像为[debian:bookworm-slimy,debian12]()，选择该镜像的目的主要有如下：
+
+1. ZeroTier的控制器版本依赖问题，控制器版本需要构建postgresql和redis
+2. slimy是debian的容器精简版本，剔除了不必要的软件和文档等
+
+### ZeroTier依赖问题
+
+通过下图在源码仓库的`/make-linux.mk`文件中，我们可以看到，依赖相关内容：
+
+![alt texk'k](README.assets/image.png)
+
+依赖与`ubuntu 22.04` 相关包，Ubuntu是Debian的下游发行版，我个人总觉得Debian比Ubuntu精简，所以在这里我选择了Debian。
+
+## 相关引用
+
++ [ZeroTier-One 仓库](https://github.com/zerotier/ZeroTierOne)
++ [Rust镜像源](https://developer.aliyun.com/article/1552431)
++ [Cargo镜像源](https://www.cnblogs.com/trigger-cn/p/18334279)
++ [Github镜像站](https://ghproxy.link/)
++ [Ztncui 仓库](https://github.com/key-networks/ztncui)
