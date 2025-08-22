@@ -14,7 +14,9 @@
 
 在启动容器后，你应该在本机上再安装一个ZeroTier的客户端，然后替换`planet`文件，加入控制器创建的网络中。不建议在裸机上运行ZeroTier-One，这会导致你的ZeroTier控制器无法加入网络管理。
 
-暂时不支持IPv6，Dockerfile的内容也是为国内用户设计的，国外的话就没有必要自建Planet了，直接使用moon的方式更好一点。
+deploy脚本暂时不支持IPv6，Dockerfile的内容也是为国内用户设计的，国外的话就没有必要自建Planet了，直接使用moon的方式更好一点。
+
+> 推荐使用podman作为容器管理
 
 ## 使用
 
@@ -37,6 +39,16 @@ sudo deploy.sh
 > 注意1：主机映射9993/tcp 和 9993/udp 端口不可更改。若出现，9993端口冲突，请优先考虑ZeroTier，若Planet的端口不为9993，Client将无法连接。
 
 > 注意2：可以直接使用sftp或scp工具下载 planet 到本地，planet和moon文件存放在/dist目录中
+
+### 如何添加一个IP？
+
+在本项目的`deploy.sh`脚本中，只提供了单个IP的加入方式，如果想添加多个IP怎么办？
+
+
+
+## 迁移与集群部署
+
+ZeroTier Planet的迁移是非常简单的，因为ZeroTier控制器的所有数据记录均基于文件，所以在迁移时只需要保存相关文件即可。集群部署也是如此，使用集群存储解决方案，将ZeroTier的数据文件保存在集群存储中。
 
 ## 目录结构
 
