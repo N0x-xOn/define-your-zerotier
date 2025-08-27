@@ -1,6 +1,7 @@
 FROM debian:bookworm-slim AS builder
 
 # 构建参数：是否使用国内镜像源
+# 默认使用，Github Action 不使用
 ARG USE_CHINA_MIRROR=true
 
 WORKDIR /app
@@ -88,8 +89,9 @@ COPY --from=builder /app/entrypoint.sh /app/entrypoint.sh
 COPY --from=builder /app/check.sh /app/check.sh
 
 RUN set -x \
-    && sed -i 's@deb.debian.org@mirrors.aliyun.com@g' \
-    /etc/apt/sources.list.d/debian.sources \
+    && if [ "$USE_CHINA_MIRROR" = "true" ]; then \
+        sed -i 's@deb.debian.org@mirrors.aliyun.com@g' /etc/apt/sources.list.d/debian.sources; \
+    fi \
     && apt-get update -qq \
     # 更新镜像存在软件包，确保所有软件包均为当时最新版
     && apt-get -y -qq upgrade \
