@@ -3,7 +3,7 @@ run-name: Build and push ZeroTier Planet Server ${{ github.sha }}
 
 on:
   push:
-    branches: [ main, dev ]  # 临时添加dev分支用于测试
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       version:
@@ -67,7 +67,7 @@ jobs:
         context: ./build
         file: ./build/Dockerfile
         platforms: linux/amd64
-        push: false  # 测试期间设为false，避免实际推送
+        push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
@@ -75,10 +75,9 @@ jobs:
         build-args: |
           USE_CHINA_MIRROR=false
         
-    # 测试期间临时注释掉    
-    # - name: Generate artifact attestation
-    #   uses: actions/attest-build-provenance@v1
-    #   with:
-    #     subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}
-    #     subject-digest: ${{ steps.build.outputs.digest }}
-    #     push-to-registry: true
+    - name: Generate artifact attestation
+      uses: actions/attest-build-provenance@v1
+      with:
+        subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}
+        subject-digest: ${{ steps.build.outputs.digest }}
+        push-to-registry: true
