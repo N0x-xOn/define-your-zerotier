@@ -1,5 +1,8 @@
 FROM debian:bookworm-slim AS builder
 
+# 构建参数：是否使用国内镜像源
+ARG USE_CHINA_MIRROR=true
+
 WORKDIR /app
 
 COPY ./patch/entrypoint.sh /app/entrypoint.sh
@@ -12,19 +15,22 @@ ENV GHPROXY="https://ghfast.top/"
 ENV TAG=main
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Rustup 制备镜像地址
-ENV RUSTUP_UPDATE_ROOT=https://mirrors.aliyun.com/rustup/rustup
-ENV RUSTUP_DIST_SERVER=https://mirrors.aliyun.com/rustup
-
 # init tool
 RUN set -x \
-    && sed -i 's@deb.debian.org@mirrors.aliyun.com@g' \
-    /etc/apt/sources.list.d/debian.sources \
+    && if [ "$USE_CHINA_MIRROR" = "true" ]; then \
+        sed -i 's@deb.debian.org@mirrors.aliyun.com@g' /etc/apt/sources.list.d/debian.sources; \
+    fi \
     && apt-get update \
     && apt-get install -y git python3 npm make \
-    linux-headers-$(uname -r) \
     curl libpq-dev pkg-config libssl-dev jq build-essential clang \
     protobuf-compiler libprotobuf-dev \
+    && (apt-get install -y linux-headers-$(uname -r) || \
+        apt-get install -y linux-headers-generic || \
+        apt-get install -y linux-headers-amd64) \
+    && if [ "$USE_CHINA_MIRROR" = "true" ]; then \
+        export RUSTUP_UPDATE_ROOT=https://mirrors.aliyun.com/rustup/rustup; \
+        export RUSTUP_DIST_SERVER=https://mirrors.aliyun.com/rustup; \
+    fi \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y\
     && . "$HOME/.cargo/env" \
     && cat /app/cargo_config > "$HOME/.cargo/config" \
