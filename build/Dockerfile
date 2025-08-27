@@ -77,6 +77,7 @@ ENV IP_ADDR4=""
 ENV IP_ADDR6=""
 
 ENV API_PORT=3443
+ENV ZT_PORT=9993
 
 COPY --from=builder /app/ztncui /bak/ztncui
 COPY --from=builder /var/lib/zerotier-one /bak/zerotier-one

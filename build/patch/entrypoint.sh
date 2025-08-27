@@ -4,7 +4,6 @@ set -x
 
 # 配置路径和端口
 ZEROTIER_PATH="/var/lib/zerotier-one"
-ZT_PORT=9993
 APP_PATH="/app"
 CONFIG_PATH="${APP_PATH}/config"
 BACKUP_PATH="/bak"
@@ -14,7 +13,8 @@ ZTNCUI_SRC_PATH="${ZTNCUI_PATH}/src"
 # 启动 ZeroTier 和 ztncui
 function start() {
     echo "Start ztncui and zerotier"
-    cd $ZEROTIER_PATH && zerotier-one -p ${ZT_PORT} -d || exit 1
+    # -p{port} 端口号要紧挨着-p
+    cd $ZEROTIER_PATH && zerotier-one -p${ZT_PORT} -d || exit 1
     nohup node ${APP_PATH}/http_server.js &> ${APP_PATH}/server.log & 
     cd $ZTNCUI_SRC_PATH && npm start || exit 1
 }
@@ -28,6 +28,8 @@ function init_zerotier_data() {
 
     cd $ZEROTIER_PATH
 
+    echo "${ZT_PORT}" > zerotier-one.port
+
     # 生成ZeroTier API访问密钥
     openssl rand -hex 16 > authtoken.secret
 
@@ -35,7 +37,7 @@ function init_zerotier_data() {
     ./zerotier-idtool generate identity.secret identity.public
     ./zerotier-idtool initmoon identity.public > moon.json
 
-    # 判断IP_ADDR4是否为空
+    # 生成planet段
     if [ -n "$IP_ADDR4" ] && [ -n "$IP_ADDR6" ]; then
         stableEndpoints="[\"$IP_ADDR4/${ZT_PORT}\",\"$IP_ADDR6/${ZT_PORT}\"]"
     elif [ -n "$IP_ADDR4" ]; then
