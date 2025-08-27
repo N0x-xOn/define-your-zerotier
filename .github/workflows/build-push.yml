@@ -72,6 +72,8 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        build-args: |
+          USE_CHINA_MIRROR=false
         
     # 测试期间临时注释掉    
     # - name: Generate artifact attestation
