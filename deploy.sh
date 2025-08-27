@@ -3,7 +3,7 @@
 source build/build.sh
 
 # 构建所需变量
-IMAGE_NAME="define-your-zerotier"
+IMAGE_NAME="zerotier-controller"
 IMAGE_RP_USER="shawing"
 ZTN_RP="ZeroTierOne"
 ZTN_RP_USER="zerotier"
@@ -16,7 +16,7 @@ PUBLIC_IPv6_CHECK_URL="https://ipv6.icanhazip.com/"
 # .env 配置文件内容
 IP_ADDR4=""
 IP_ADDR6=""
-API_PORT="3443" # Ztncui 端口
+API_PORT="3443" # Ztncui 端口 # Ztncui 端口
 ZT_PORT="9993" # ZeroTier默认端口,不要修改
 DATA_PATH="/data/zerotier" # 默认数据存放
 
@@ -52,34 +52,7 @@ warn_msg() {
     echo -e "${YELLOW}[WARNING]${NC} $1"
 }
 
-# 通过ZeroTier提供的版本信息配置构建版本tag
-_getReleaseVersion() {
-    local zerotier_release=$( curl -s https://download.zerotier.com/RELEASES/ | \
-        grep -E 'href="[0-9]+\.[0-9]+\.[0-9]+/"' | \
-        awk '{
-            # 提取日期和时间（第3列和第4列）
-            split($3, d, "-");
-            month_map["Jan"]="01"; month_map["Feb"]="02"; month_map["Mar"]="03";
-            month_map["Apr"]="04"; month_map["May"]="05"; month_map["Jun"]="06";
-            month_map["Jul"]="07"; month_map["Aug"]="08"; month_map["Sep"]="09";
-            month_map["Oct"]="10"; month_map["Nov"]="11"; month_map["Dec"]="12";
-            # 生成可排序的时间戳（YYYYMMDDHHMM）
-            key = d[3] month_map[d[2]] d[1] $4;
-            gsub(/:/, "", key);  # 移除时间中的冒号（如 19:23 → 1923）
-            print key " " $0;
-        }' | \
-        sort -k1n | \
-        cut -d' ' -f2- | \
-        tail -n 1 | \
-        sed -n 's/.*href="\([0-9]\+\.[0-9]\+\.[0-9]\+\)\/".*/\1/p')
-    
-    if [ -z "${zerotier_release}" ]; then
-        return 1
-    else
-        RELEASES=${zerotier_release}
-        return 0
-    fi
-}
+
 
 _init_env_file() {
     sed -e "s#__IP_ADDR4__#${IP_ADDR4}#" \
@@ -117,6 +90,7 @@ _check_image() {
     local image_tag=$2
 
     if [ -z "${image_name}" ] || [ -z "${image_tag}" ]; then
+        error_msg "内部错误: _check_image 调用时镜像名称或标签为空。"
         error_msg "内部错误: _check_image 调用时镜像名称或标签为空。"
         return 1
     fi
@@ -158,6 +132,7 @@ print_url() {
     fi
 
     echo -e "\n${BLUE}--- Planet和Moon文件信息 ---${NC}"
+    echo -e "\n${BLUE}--- Planet和Moon文件信息 ---${NC}"
     if [ -n "${DATA_PATH}" ]; then
          echo -e "Moon配置文件和Planet配置文件位于宿主机路径: ${YELLOW}${DATA_PATH}/dist${NC}"
     fi
@@ -194,12 +169,12 @@ _extract_config() {
     if [ -z "${IP_ADDR4}" ] && [ -n "${temp_ip4}" ]; then
         IP_ADDR4=${temp_ip4}
     fi
-    # IP_ADDR6=$(_extract "ip_addr6")
+    IP_ADDR6=$(_extract "ip_addr6")
 
     if [ -n "${DATA_PATH}" ] && [ -d "${DATA_PATH}/dist" ]; then
         MOON_NAME=$(ls "${DATA_PATH}/dist" 2>/dev/null | grep moon | tr -d '\r' | head -n 1)
     else
-        # warn_msg "在 _extract_config 中: DATA_PATH 未设置或 ${DATA_PATH}/dist 不存在，无法获取 MOON_NAME。"
+        warn_msg "在 _extract_config 中: DATA_PATH 未设置或 ${DATA_PATH}/dist 不存在，无法获取 MOON_NAME。"
         MOON_NAME=""
     fi
 }
@@ -318,7 +293,7 @@ build() {
 
     
 
-    if ! Build "${IMAGE_NAME}" "${RELEASES}"; then 
+    if ! Build; then 
         error_msg "Docker 镜像构建失败。请检查 './build.sh' 脚本的输出。"
         cd ..
         return 1

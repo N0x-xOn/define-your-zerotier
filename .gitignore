@@ -1,3 +1,4 @@
 !*
 .env
-**/img/*.dimg
+**/img/*
+.vscode
