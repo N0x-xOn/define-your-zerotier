@@ -4,6 +4,7 @@ set -x
 
 # 配置路径和端口
 ZEROTIER_PATH="/var/lib/zerotier-one"
+ZT_PORT=9993
 APP_PATH="/app"
 CONFIG_PATH="${APP_PATH}/config"
 BACKUP_PATH="/bak"
@@ -13,7 +14,7 @@ ZTNCUI_SRC_PATH="${ZTNCUI_PATH}/src"
 # 启动 ZeroTier 和 ztncui
 function start() {
     echo "Start ztncui and zerotier"
-    cd $ZEROTIER_PATH && zerotier-one -p$(cat ${CONFIG_PATH}/zerotier-one.port) -d || exit 1
+    cd $ZEROTIER_PATH && zerotier-one -p ${ZT_PORT} -d || exit 1
     nohup node ${APP_PATH}/http_server.js &> ${APP_PATH}/server.log & 
     cd $ZTNCUI_SRC_PATH && npm start || exit 1
 }
@@ -21,8 +22,6 @@ function start() {
 # 初始化 ZeroTier 数据
 function init_zerotier_data() {
     echo "Initializing ZeroTier data"
-
-    echo "${ZT_PORT}" > ${CONFIG_PATH}/zerotier-one.port
 
     # 将/bak目录下的文件恢复
     cp -r ${BACKUP_PATH}/zerotier-one/* $ZEROTIER_PATH
@@ -35,9 +34,6 @@ function init_zerotier_data() {
     # 生成moon.json文件，为便后续使用
     ./zerotier-idtool generate identity.secret identity.public
     ./zerotier-idtool initmoon identity.public > moon.json
-
-    # 保存ZeroTier端口信息
-    ZT_PORT=$(cat ${CONFIG_PATH}/zerotier-one.port)
 
     # 判断IP_ADDR4是否为空
     if [ -n "$IP_ADDR4" ] && [ -n "$IP_ADDR6" ]; then

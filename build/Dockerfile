@@ -2,9 +2,10 @@ FROM debian:bookworm-slim AS builder
 
 WORKDIR /app
 
-ADD ./patch/entrypoint.sh /app/entrypoint.sh
-ADD ./patch/mkworld_custom.cpp /app/patch/mkworld_custom.cpp
-ADD ./patch/cargo_config /app/cargo_config
+COPY ./patch/entrypoint.sh /app/entrypoint.sh
+COPY ./patch/mkworld_custom.cpp /app/patch/mkworld_custom.cpp
+COPY ./patch/cargo_config /app/cargo_config
+COPY ./patch/check.sh /app/check.sh
 
 ENV TZ=Asia/Shanghai
 ENV GHPROXY="https://ghfast.top/"
@@ -14,7 +15,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Rustup 制备镜像地址
 ENV RUSTUP_UPDATE_ROOT=https://mirrors.aliyun.com/rustup/rustup
 ENV RUSTUP_DIST_SERVER=https://mirrors.aliyun.com/rustup
-
 
 # init tool
 RUN set -x \
@@ -60,7 +60,7 @@ RUN set -x \
     && echo "ztncui build success!" \
     && ls -la /app/ztncui 
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim AS runtime
 
 WORKDIR /app
 
@@ -69,24 +69,35 @@ ENV TZ=Asia/Shanghai
 ENV IP_ADDR4=""
 ENV IP_ADDR6=""
 
-ENV ZT_PORT=9993
 ENV API_PORT=3443
 
 COPY --from=builder /app/ztncui /bak/ztncui
+COPY --from=builder /var/lib/zerotier-one /bak/zerotier-one
 
 # ZeroTier 相关文件
-COPY --from=builder /var/lib/zerotier-one /bak/zerotier-one
 COPY --from=builder /app/ZeroTierOne/zerotier-one /usr/sbin/zerotier-one
 COPY --from=builder /app/ZeroTierOne/zerotier-idtool /usr/sbin/zerotier-idtool
 
 COPY --from=builder /app/entrypoint.sh /app/entrypoint.sh
+COPY --from=builder /app/check.sh /app/check.sh
 
 RUN set -x \
     && sed -i 's@deb.debian.org@mirrors.aliyun.com@g' \
     /etc/apt/sources.list.d/debian.sources \
     && apt-get update -qq \
-    && apt-get install -qq npm curl jq openssl libc-dev libpq5 -y \
-    && mkdir /app/config -p 
+    # 更新镜像存在软件包，确保所有软件包均为当时最新版
+    && apt-get -y -qq upgrade \
+    # entrypoint 和 check 脚本依赖jq
+    # authsecret 密钥生成依赖openssl
+    # ZeroTier 依赖 libpq5
+    # ztncui 依赖 npm
+    && apt-get install -y -qq --no-install-recommends npm curl jq openssl libpq5 \
+    && mkdir -p /app/config \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD [ "/bin/bash", "/check.sh" ]
 
 VOLUME [ "/app/dist", "/app/ztncui", "/var/lib/zerotier-one", "/app/config"]
 

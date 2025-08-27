@@ -190,7 +190,7 @@ void binaryToJson() {
 	}
 }
 
-
+/*  */
 int main(int argc, char** argv)
 {
 	bool json2bin = false;
