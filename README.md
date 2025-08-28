@@ -143,6 +143,8 @@ ZeroTier Planet的迁移是非常简单的，因为ZeroTier控制器的所有数
 │       └── mkworld_custom.cpp
 ├── deploy.sh
 ├── docker-compose.yaml
+├── install
+│   └── README.md
 ├── README.assets
 │   └── image.png
 └── README.md
