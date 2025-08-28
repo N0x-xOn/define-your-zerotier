@@ -4,10 +4,11 @@ run-name: Build and push ZeroTier Planet Server ${{ github.sha }}
 on:
   push:
     branches: [ main ]
+  # 预留给后续扩展需求使用例如打 slim，controller，alld等特殊版本标签时使用
   workflow_dispatch:
     inputs:
       version:
-        description: 'Custom version tag'
+        description: 'Custom version tag' 
         required: false
         default: 'latest'
 
@@ -21,6 +22,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
 
     steps:
     - name: Checkout repository
@@ -57,7 +60,7 @@ jobs:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         tags: |
           type=raw,value=latest,enable={{is_default_branch}}
-          type=raw,value=v${{ steps.zerotier-version.outputs.version }}-${{ github.sha }}
+          type=raw,value=v${{ steps.zerotier-version.outputs.version }}-{{sha}}
           type=raw,value=${{ github.event.inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' }}
         
     - name: Build and push Docker image

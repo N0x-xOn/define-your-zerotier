@@ -4,7 +4,7 @@
 
 1. 没有自主性，需要通过ZeroTier官网进行管理
 2. 在Mac设备上，无法连接Moon服务器
-3. Moon 设备的握手需要通过planet进行，默认的planet服务器都在国外
+3. Moon设备的握手需要通过planet进行，默认的planet服务器都在国外
 
 ## 注意事项
 
@@ -19,16 +19,41 @@
 > 容器内：`/var/lib/zerotier-one/local.conf`
 >
 > 宿主机：`$DATA/one/local.conf`
-> 
-> 若没有直接创建即可，将`force
 
 相关请参考[官方文档](https://docs.zerotier.com/relay/)
 
 **deploy脚本**：deploy脚本暂时不支持IPv6，Dockerfile的内容也是为国内用户设计的，国外的话就没有必要自建Planet了，直接使用moon的方式更好一点。
 
-> 推荐使用podman作为容器管理，关闭本地防火墙。先使用云主机防火墙过渡，暂时未知原因。如果不能够接受，直接使用docker也可以
+**容器化选择**：推荐使用`podman`作为容器管理，关闭本地防火墙。先使用云主机防火墙过渡，暂时未知原因。如果不能够接受，直接使用docker也可以。不优先推荐使用Docker的主要的原因是，Docker基于Daemon，如果对Docker的Daemon有任何操作，都会直接影响到容器，ZeroTier控制器作为网络设施的planet，应该是稳定的，安全的和可靠的（Docker的更新会重启所有容器）。
+
+**针对服务器安全的建议**：当你成功部署ZeroTier后，我建议访问服务器的非公开服务端口，均采用ZeroTier虚拟网络的方式，因为`ztncui`面板使用了很多过时的包（截止2025年8月27日），这些包都出现了很多**严重的安全漏洞**，就算你设置了复杂的密码，也可能会被别人利用软件缺陷撬开服务器的壁垒。*在互联网上，没有低价值豁免权*，也就是你的服务器就算没有有价值的资产，也会被攻击。所以，保护好你的服务器。
 
 ## 使用
+
+### 方式一 - 一键启动
+
+使用`compose`编排文件一键启动
+
+修改`env`环境文件，只有`.env`才会被`compose`编排识别，作为环境变量文件：
+
+```shell
+cp .env.template .env 
+```
+
+env 文件内容：
+
++ `IP_ADDR4`：部署ZeroTier控制器的IPv4地址
++ `IP_ADDR6`：部署ZeroTier控制器的IPv6地址
++ `ZTNCUI_PORT`：[ztncui](https://github.com/key-networks/ztncui)的转发端口
++ `DATA_PATH`：容器运行数据目录
+
+```shell
+docker compose up -d
+```
+
+### 方式2 - 部署脚本
+
+> 部署脚本并不是全发行版适用的，并且兼容性较差，不建议使用
 
 ```shell
 git clone https://github.com/Xiwin/define-your-zerotier.git
@@ -51,6 +76,17 @@ sudo deploy.sh
 > 注意2：可以直接使用sftp或scp工具下载 planet 到本地，planet和moon文件存放在/dist目录中
 
 当然你也可以直接参考项目下的`.env.template`，新建`.env`文件，用以在`compose`运行时读取环境变量。`deploy.sh`脚本不一定兼容所有操作系统。
+
+### 一键构建
+
+```shell
+cd build 
+source ./build.sh && Build
+```
+
+### 更新
+
+可以实时关注[Docker Hub的仓库](https://hub.docker.com/r/skylarleo/define-your-zerotier)，或使用镜像更新检测工具。在镜像更新时重新拉取即可，一般情况下，除[注意事项](#注意事项)中的*剔除ztncui*外，不会进行破坏性修改。保留`DATA_PATH`目录内容，重新启动即可。
 
 ### 如何修改planet IP？
 
@@ -100,7 +136,6 @@ ZeroTier Planet的迁移是非常简单的，因为ZeroTier控制器的所有数
 ├── build
 │   ├── build.sh
 │   ├── Dockerfile
-│   ├── img
 │   └── patch
 │       ├── cargo_config
 │       ├── check.sh
@@ -108,8 +143,6 @@ ZeroTier Planet的迁移是非常简单的，因为ZeroTier控制器的所有数
 │       └── mkworld_custom.cpp
 ├── deploy.sh
 ├── docker-compose.yaml
-├── install
-│   └── README.md
 ├── README.assets
 │   └── image.png
 └── README.md

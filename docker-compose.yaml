@@ -1,6 +1,6 @@
 services:
   zerotier-server:
-    image: zerotier-controller:latest
+    image: skylarleo/define-your-zerotier:latest
     build:
       context: build
       dockerfile: Dockerfile
@@ -9,7 +9,7 @@ services:
     ports:
       - "9993:9993/tcp" # 当9993端口不可用时，会使用tcpRelay
       - "9993:9993/udp"
-      - "${API_PORT}:3443"
+      - "${ZTNCUI_PORT}:3443"
     environment:
       - IP_ADDR4=${IP_ADDR4}
       - IP_ADDR6=${IP_ADDR6}
