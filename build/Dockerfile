@@ -87,7 +87,7 @@ COPY --from=builder /app/ZeroTierOne/zerotier-one /usr/sbin/zerotier-one
 COPY --from=builder /app/ZeroTierOne/zerotier-idtool /usr/sbin/zerotier-idtool
 
 COPY --from=builder /app/entrypoint.sh /app/entrypoint.sh
-COPY --from=builder /app/check.sh /app/check.sh
+COPY --from=builder /app/check.sh /check.sh
 
 RUN set -x \
     && if [ "$USE_CHINA_MIRROR" = "true" ]; then \

@@ -1,9 +1,6 @@
 services:
   zerotier-server:
     image: skylarleo/define-your-zerotier:latest
-    build:
-      context: build
-      dockerfile: Dockerfile
     container_name: zerotier-server
     restart: unless-stopped
     ports:
