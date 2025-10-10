@@ -8,13 +8,12 @@ ADD ./patch/cargo_config /app/cargo_config
 
 ENV TZ=Asia/Shanghai
 ENV GHPROXY="https://ghfast.top/"
-ENV TAG=main
+ENV TAG="1.14.2"
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Rustup 制备镜像地址
 ENV RUSTUP_UPDATE_ROOT=https://mirrors.aliyun.com/rustup/rustup
 ENV RUSTUP_DIST_SERVER=https://mirrors.aliyun.com/rustup
-
 
 # init tool
 RUN set -x \
@@ -70,7 +69,7 @@ ENV IP_ADDR4=""
 ENV IP_ADDR6=""
 
 ENV ZT_PORT=9993
-ENV API_PORT=3443
+ENV ZTNCUI_PORT=3443
 
 COPY --from=builder /app/ztncui /bak/ztncui
 

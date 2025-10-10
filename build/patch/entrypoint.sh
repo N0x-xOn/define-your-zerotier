@@ -105,9 +105,9 @@ function init_ztncui_data() {
 
     echo "Configuring ztncui"
     mkdir -p ${CONFIG_PATH}
-    echo "${API_PORT}" > ${CONFIG_PATH}/ztncui.port
+    echo "${ZTNCUI_PORT}" > ${CONFIG_PATH}/ztncui.port
     cd $ZTNCUI_SRC_PATH
-    echo "HTTP_PORT=${API_PORT}" > .env
+    echo "HTTP_PORT=${ZTNCUI_PORT}" > .env
     echo 'NODE_ENV=production' >> .env
     echo 'HTTP_ALL_INTERFACES=true' >> .env
     echo "ZT_ADDR=localhost:${ZT_PORT}" >> .env
@@ -121,7 +121,7 @@ function init_ztncui_data() {
 function check_ztncui() {
     mkdir -p $ZTNCUI_PATH
     if [ "$(ls -A $ZTNCUI_PATH)" ]; then
-        echo "${API_PORT}" > ${CONFIG_PATH}/ztncui.port
+        echo "${ZTNCUI_PORT}" > ${CONFIG_PATH}/ztncui.port
         echo "$ZTNCUI_PATH is not empty, starting directly"
     else
         init_ztncui_data

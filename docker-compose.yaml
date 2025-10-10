@@ -5,11 +5,10 @@ services:
       context: build
       dockerfile: Dockerfile
     container_name: zerotier-server
-    restart: unless-stopped
     ports:
       - "9993:9993/tcp"
       - "9993:9993/udp"
-      - "${API_PORT}:3443"
+      - "${ZTNCUI_PORT}:3443"
     environment:
       - IP_ADDR4=${IP_ADDR4}
       - IP_ADDR6=${IP_ADDR6}

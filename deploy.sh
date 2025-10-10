@@ -16,7 +16,7 @@ PUBLIC_IPv6_CHECK_URL="https://ipv6.icanhazip.com/"
 # .env 配置文件内容
 IP_ADDR4=""
 IP_ADDR6=""
-API_PORT="3443" # Ztncui 端口
+ZTNCUI_PORT="3443" # Ztncui 端口
 ZT_PORT="9993" # ZeroTier默认端口,不要修改
 DATA_PATH="/data/zerotier" # 默认数据存放
 
@@ -83,7 +83,7 @@ _getReleaseVersion() {
 
 _init_env_file() {
     sed -e "s#__IP_ADDR4__#${IP_ADDR4}#" \
-    -e "s#__API_PORT__#${API_PORT}#" \
+    -e "s#__ZTNCUI_PORT__#${ZTNCUI_PORT}#" \
     -e "s#__DATA_PATH__#${DATA_PATH}#" \
     .env.template > .env
 }
@@ -148,8 +148,8 @@ print_url() {
     echo -e "\n${BLUE}===============================================================${NC}"
     echo -e "${BLUE}                    部署完成 - 访问信息                    ${NC}"
     echo -e "${BLUE}===============================================================${NC}\n"
-    if [ -n "${IP_ADDR4}" ] && [ -n "${API_PORT}" ]; then
-        echo -e "${GREEN}请访问 Web UI进行配置: ${YELLOW}http://${IP_ADDR4}:${API_PORT}${NC}"
+    if [ -n "${IP_ADDR4}" ] && [ -n "${ZTNCUI_PORT}" ]; then
+        echo -e "${GREEN}请访问 Web UI进行配置: ${YELLOW}http://${IP_ADDR4}:${ZTNCUI_PORT}${NC}"
         echo -e "默认用户名：${YELLOW}admin${NC}"
         echo -e "默认密码：${YELLOW}password${NC}"
         warn_msg "请及时修改密码！"
@@ -166,7 +166,7 @@ print_url() {
     warn_msg "请确保防火墙已放行以下端口："
     echo -e "  - ${YELLOW}${ZT_PORT}/tcp${NC} (ZeroTier)"
     echo -e "  - ${YELLOW}${ZT_PORT}/udp${NC} (ZeroTier)"
-    echo -e "  - ${YELLOW}${API_PORT}/tcp${NC} (Web UI)"
+    echo -e "  - ${YELLOW}${ZTNCUI_PORT}/tcp${NC} (Web UI)"
     echo -e "\n${BLUE}===============================================================${NC}\n"
 }
 
@@ -211,14 +211,14 @@ _extract_env() {
         local temp_ip4 api_p f_server_p data_p
         temp_ip4=$(grep -E "^IP_ADDR4=" "${key_file}" | cut -d= -f2-)
         # IP_ADDR6=$(grep -E "^IP_ADDR6=" "${key_file}" | cut -d= -f2-)
-        api_p=$(grep -E "^API_PORT=" "${key_file}" | cut -d= -f2-)
+        api_p=$(grep -E "^ZTNCUI_PORT=" "${key_file}" | cut -d= -f2-)
         data_p=$(grep -E "^DATA_PATH=" "${key_file}" | cut -d= -f2-)
 
         [ -n "$temp_ip4" ] && IP_ADDR4="$temp_ip4"
-        [ -n "$api_p" ] && API_PORT="$api_p"
+        [ -n "$api_p" ] && ZTNCUI_PORT="$api_p"
         [ -n "$data_p" ] && DATA_PATH="$data_p"
 
-        if [ -z "${API_PORT}" ] || [ -z "${DATA_PATH}" ]; then
+        if [ -z "${ZTNCUI_PORT}" ] || [ -z "${DATA_PATH}" ]; then
              warn_msg ".env 文件部分配置项未能正确加载。请检查文件格式。"
         fi
     else
@@ -381,16 +381,16 @@ run() {
     info_msg "将使用的 IPv4 地址: ${IP_ADDR4}"
 
     echo -e "\n${BLUE}--- 端口配置 ---${NC}"
-    read -p "$(echo -e "${YELLOW}是否使用默认API管理端口 [${GREEN}${API_PORT}${YELLOW}]? (y/n): ${NC}")" use_default_api_port
+    read -p "$(echo -e "${YELLOW}是否使用默认API管理端口 [${GREEN}${ZTNCUI_PORT}${YELLOW}]? (y/n): ${NC}")" use_default_api_port
     if [[ "$use_default_api_port" =~ ^[Nn]$ ]]; then
-        read -p "$(echo -e "${YELLOW}请输入新的API管理端口 (例如 3444): ${NC}")" NEW_API_PORT
-        if [[ "${NEW_API_PORT}" =~ ^[0-9]+$ ]] && [ "${NEW_API_PORT}" -gt 0 ] && [ "${NEW_API_PORT}" -lt 65536 ]; then
-            API_PORT=${NEW_API_PORT}
-        elif [ -n "${NEW_API_PORT}" ]; then
-            warn_msg "无效的端口号 '${NEW_API_PORT}'。将使用默认端口 ${API_PORT}。"
+        read -p "$(echo -e "${YELLOW}请输入新的API管理端口 (例如 3444): ${NC}")" NEW_ZTNCUI_PORT
+        if [[ "${NEW_ZTNCUI_PORT}" =~ ^[0-9]+$ ]] && [ "${NEW_ZTNCUI_PORT}" -gt 0 ] && [ "${NEW_ZTNCUI_PORT}" -lt 65536 ]; then
+            ZTNCUI_PORT=${NEW_ZTNCUI_PORT}
+        elif [ -n "${NEW_ZTNCUI_PORT}" ]; then
+            warn_msg "无效的端口号 '${NEW_ZTNCUI_PORT}'。将使用默认端口 ${ZTNCUI_PORT}。"
         fi
     fi
-    info_msg "将使用的API管理端口: ${API_PORT}"
+    info_msg "将使用的API管理端口: ${ZTNCUI_PORT}"
 
     echo -e "\n${BLUE}--- 数据路径配置 ---${NC}"
     read -p "$(echo -e "${YELLOW}ZeroTier 数据将默认存储在 [${GREEN}${DATA_PATH}${YELLOW}]，是否修改? (y/n): ${NC}")" modify_data_path_confirm
@@ -426,7 +426,7 @@ run() {
 
     info_msg "检查端口占用情况..."
     _check_port ${ZT_PORT}
-    _check_port ${API_PORT}
+    _check_port ${ZTNCUI_PORT}
     success_msg "所需端口未被占用。"
 
 
@@ -476,7 +476,7 @@ info() {
     
     echo -e "\n${BLUE}--- 解析后的主要配置值 (来自 .env 或默认值) ---${NC}"
     echo -e "  ${GREEN}公网 IPv4 地址:${NC} ${YELLOW}${IP_ADDR4:-未设置}${NC}"
-    echo -e "  ${GREEN}API 管理端口:${NC} ${YELLOW}${API_PORT:-未设置}${NC}"
+    echo -e "  ${GREEN}API 管理端口:${NC} ${YELLOW}${ZTNCUI_PORT:-未设置}${NC}"
     echo -e "  ${GREEN}ZeroTier 默认端口:${NC} ${YELLOW}${ZT_PORT:-9993}${NC} (UDP/TCP)"
     echo -e "  ${GREEN}数据存储路径:${NC} ${YELLOW}${DATA_PATH:-未设置}${NC}"
 
