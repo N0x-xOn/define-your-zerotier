@@ -16,7 +16,7 @@ PUBLIC_IPv6_CHECK_URL="https://ipv6.icanhazip.com/"
 # .env 配置文件内容
 IP_ADDR4=""
 IP_ADDR6=""
-ZTNCUI_PORT="3443" # Ztncui 端口 # Ztncui 端口
+API_PORT="3443" # Ztncui 端口
 ZT_PORT="9993" # ZeroTier默认端口,不要修改
 DATA_PATH="/data/zerotier" # 默认数据存放
 

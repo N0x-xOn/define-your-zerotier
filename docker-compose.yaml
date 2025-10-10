@@ -2,7 +2,6 @@ services:
   zerotier-server:
     image: skylarleo/define-your-zerotier:latest
     container_name: zerotier-server
-    restart: unless-stopped
     ports:
       - "9993:9993/tcp" # 当9993端口不可用时，会使用tcpRelay
       - "9993:9993/udp"
