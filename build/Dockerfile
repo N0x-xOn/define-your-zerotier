@@ -47,8 +47,8 @@ RUN set -x\
     && git clone "${GHPROXY}https://github.com/zerotier/ZeroTierOne.git" \
     && cd ZeroTierOne \
     && git checkout ${TAG} \
-    # 编译ZeroTier控制器版本
-    && make ZT_CONTROLLER=1 \
+    # && make ZT_CONTROLLER=1 \
+    && make -j \
     # make install 主要用以获取zerotier-one.te文件内容
     && make install \
     && cd ./attic/world \
