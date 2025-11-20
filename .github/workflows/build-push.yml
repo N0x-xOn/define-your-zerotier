@@ -4,7 +4,7 @@ run-name: Build and push ZeroTier Planet Server ${{ github.sha }}
 on:
   push:
     branches: [ main ]
-  # 预留给后续扩展需求使用例如打 slim，controller，alld等特殊版本标签时使用
+  # 预留给后续扩展需求使用例如打 slim，controller等特殊版本标签时使用
   workflow_dispatch:
     inputs:
       version:

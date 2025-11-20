@@ -1,16 +1,9 @@
 services:
-  zerotier-server:
+  zerotier-controller:
     image: skylarleo/define-your-zerotier:latest
-    container_name: zerotier-server
+    container_name: zerotier-controller
     ports:
-      - "9993:9993/tcp" # 当9993端口不可用时，会使用tcpRelay
-      - "9993:9993/udp"
-      - "${ZTNCUI_PORT}:3443"
-    environment:
-      - IP_ADDR4=${IP_ADDR4}
-      - IP_ADDR6=${IP_ADDR6}
+      - "${EXPOSE_PLANET_PORT:-9993}:9993/tcp" # 当9993端口不可用时，会使用tcpRelay
+      - "${EXPOSE_PLANET_PORT:-9993}:9993/udp"
     volumes:
-      - "${DATA_PATH}/dist:/app/dist"
-      - "${DATA_PATH}/ztncui:/app/ztncui"
-      - "${DATA_PATH}/one:/var/lib/zerotier-one"
-      - "${DATA_PATH}/config:/app/config"
+      - "${DATA_PATH}:/var/lib/zerotier-one"
