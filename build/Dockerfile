@@ -4,7 +4,7 @@ WORKDIR /build
 
 ENV TZ=Asia/Shanghai
 # TAG 固定版本
-ARG TAG="1.14.2"
+ARG TAG="1.16.1"
 
 COPY ./patch /build/patch
 
@@ -19,10 +19,13 @@ RUN git clone https://github.com/zerotier/ZeroTierOne.git \
     && cd ZeroTierOne \
     && git checkout ${TAG} \
     && LDFLAGS="-L/usr/lib" make -j $(nproc) ZT_STATIC=1 \
-    && make install \
-    && cd ./attic/world \
+    && make install
+
+# 构建mkworld
+RUN cd ZeroTierOne \
+    && echo $(pwd) \
     && cp /build/patch/mkworld_custom.cpp . \
-    && mv mkworld.cpp mkworld.cpp.bak \
+    && cp /build/patch/build.sh . \
     && mv mkworld_custom.cpp mkworld.cpp \
     && bash build.sh \
     && mv mkworld /var/lib/zerotier-one \
@@ -30,20 +33,23 @@ RUN git clone https://github.com/zerotier/ZeroTierOne.git \
 
 FROM alpine:3.22
 
-ENV BACK_PATH="/zerotier-one.bak"
-ENV ZEROTIER_HOME="/var/lib/zerotier-one"
-
 EXPOSE 9993
 
 WORKDIR /app
 
-# 拷贝ZeroTier主程序
-COPY --from=builder /usr/sbin/zerotier-one /usr/sbin/zerotier-one
-COPY --from=builder /usr/sbin/zerotier-idtool /usr/sbin/zerotier-idtool
+# 拷贝 entrypoint.sh
 COPY --from=builder /build/patch/entrypoint.sh /entrypoint.sh
-
 # 拷贝主目录内容
-COPY --from=builder ${ZEROTIER_HOME} ${BACK_PATH}
+COPY --from=builder /usr/sbin/zerotier-one /app
+COPY --from=builder /var/lib/zerotier-one/mkworld /app
+
+RUN ln -s /app/zerotier-one /usr/sbin/zerotier-one \
+    && ln -s /app/zerotier-one /usr/sbin/zerotier-idtool \
+    && ln -s /app/mkworld /usr/sbin/mkworld \
+    && ls -la /usr/sbin \
+    && ls -la /app \
+    && chmod +x /entrypoint.sh
+
 
 RUN apk update \
     && apk --no-cache add bash jq curl openssl \

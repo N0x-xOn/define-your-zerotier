@@ -1,0 +1,4 @@
+#!/bin/bash
+
+# 添加了 -static-libstdc++ 和 -static-libgcc
+c++ -std=c++11 -I./ -I./ext -I. -g -static-libstdc++ -static-libgcc -o mkworld ./node/ECC.cpp ./node/Salsa20.cpp ./node/SHA512.cpp ./node/Identity.cpp ./node/Utils.cpp ./node/InetAddress.cpp ./osdep/OSUtils.cpp mkworld.cpp -lm
