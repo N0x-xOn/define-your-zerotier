@@ -10,7 +10,7 @@ COPY ./patch /build/patch
 
 # 构建环境准备
 RUN apk update \
-    && apk add bash git curl clang make pkgconfig openssl-dev openssl-libs-static linux-headers build-base \
+    && apk add bash git curl clang make pkgconfig openssl-dev openssl-libs-static linux-headers build-base cmake \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
     && . "$HOME/.cargo/env"
 
@@ -18,7 +18,8 @@ RUN apk update \
 RUN git clone https://github.com/zerotier/ZeroTierOne.git \
     && cd ZeroTierOne \
     && git checkout ${TAG} \
-    && LDFLAGS="-L/usr/lib" make -j $(nproc) ZT_STATIC=1 \
+    && git submodule update --init --recursive \
+    && make -j $(nproc) ZT_NONFREE=1 ZT_STATIC=1 ZT_USE_X64_ASM_SALSA=1 ZT_USE_X64_ASM_ED25519=1 one \
     && make install
 
 # 构建mkworld
