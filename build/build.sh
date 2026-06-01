@@ -32,8 +32,13 @@ _getReleaseVersion() {
     fi
 }
 
+# $1 = 版本标签
 Build() {
-    if ! _getReleaseVersion; then
+    if [ $# -eq 1 ]; then
+        RELEASES=$1
+    fi
+
+    if [[ -z ${RELEASES} && ! _getReleaseVersion ]]; then
         echo "获取 ZeroTier 版本失败，请检查网络连接或 https://download.zerotier.com/RELEASES/ 状态。"
         return 1
     fi

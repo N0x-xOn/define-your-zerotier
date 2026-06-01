@@ -10,7 +10,7 @@
 
 **移除zerotier-cli**：使用该仓库所构建的ZeroTier-One镜像不支持加入网络，因为是控制器版本，所以连peer信息也没有，`zerotier-cli`命令无效，但是保留了`api`服务功能，可以通过该API服务，进行二次开发。
 
-**剔除ztncui**：后续可能会剔除ztncui，NPM管理大概占用了114M
+**没有all-in-one版本，不包含GUI，例如ztncui**：不会内置GUI，GUI太重了。我认为应该将如此重的应用服务放在分离但是我建议使用[ZeroUI]()
 
 **控制器和客户端**：使用容器启动的仅为控制器，并不是客户端，所以你需要在云主机上面安装一个ZeroTier。替换`planet`文件，加入控制器创建的网络中。不建议在裸机上运行ZeroTier-One，这会导致你的ZeroTier控制器无法加入网络管理。
 

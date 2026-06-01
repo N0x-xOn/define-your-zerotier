@@ -58,6 +58,7 @@ validate_zt_files_silent() {
             return 6 # moon.json structure failed
         fi
     fi
+
     
     # All checks passed
     return 0
@@ -72,6 +73,7 @@ function check_zerotier() {
         fi
     fi
 
+    # 如果目录存在且不为空，验证文件格式；如果验证失败或目录为空，则重新初始化
     if [ "$(ls -A $ZEROTIER_PATH)" ]; then
         validate_zt_files_silent
         if [ $? -eq 0 ];then 
@@ -85,9 +87,6 @@ function check_zerotier() {
 # 启动 ZeroTier 
 function main() {
     check_zerotier
-
-    # 将back下的内容移动到ZEROTIER_HOME下
-    cp -ar ${ZEROTIER_HOME} ${BACK_PATH}
 
     cd $ZEROTIER_PATH && zerotier-one -p${ZT_PORT} || exit 1
 }
